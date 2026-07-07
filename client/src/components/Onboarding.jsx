@@ -7,20 +7,33 @@ import BookCard from "./BookCard";
  * User must select exactly 3 books they enjoy, then submit.
  */
 export default function Onboarding({ onComplete }) {
-  const [books, setBooks] = useState([]);
-  const [selected, setSelected] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [books, setBooks] = useState(() => {
+    const cached = sessionStorage.getItem("onboarding_books");
+    return cached ? JSON.parse(cached) : [];
+  });
+  const [selected, setSelected] = useState(() => {
+    const cached = sessionStorage.getItem("onboarding_selected");
+    return cached ? JSON.parse(cached) : [];
+  });
+  const [loading, setLoading] = useState(books.length === 0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetchBooks();
+    if (books.length === 0) {
+      fetchBooks();
+    }
   }, []);
+
+  useEffect(() => {
+    sessionStorage.setItem("onboarding_selected", JSON.stringify(selected));
+  }, [selected]);
 
   async function fetchBooks() {
     try {
       const res = await api.get("/books/onboarding");
       setBooks(res.data.books);
+      sessionStorage.setItem("onboarding_books", JSON.stringify(res.data.books));
     } catch (err) {
       setError("Failed to load books. Please refresh the page.");
     } finally {
@@ -58,6 +71,10 @@ export default function Onboarding({ onComplete }) {
         "bookrec_user",
         JSON.stringify({ ...storedUser, onboarded: true })
       );
+      
+      // Clear session storage now that onboarding is complete
+      sessionStorage.removeItem("onboarding_books");
+      sessionStorage.removeItem("onboarding_selected");
 
       onComplete(res.data.user);
     } catch (err) {
