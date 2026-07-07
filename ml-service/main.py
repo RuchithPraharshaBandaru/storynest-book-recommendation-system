@@ -125,15 +125,13 @@ def load_sentence_model():
         if sentence_model is not None:
             return
         try:
-            import torch
-            torch.set_num_threads(1)
-            from sentence_transformers import SentenceTransformer
-            print("[*] Loading SentenceTransformer...")
-            sentence_model = SentenceTransformer("all-MiniLM-L6-v2")
-            print("[OK] SentenceTransformer loaded successfully")
+            from fastembed import TextEmbedding
+            print("[*] Loading fastembed TextEmbedding...")
+            sentence_model = TextEmbedding("sentence-transformers/all-MiniLM-L6-v2")
+            print("[OK] fastembed model loaded successfully")
         except Exception as e:
             sentence_model = None
-            print(f"[WARN] SentenceTransformer could not be loaded ({e})")
+            print(f"[WARN] fastembed could not be loaded ({e})")
 
 
 
@@ -590,8 +588,8 @@ def semantic_search(req: SemanticSearchRequest):
     if faiss_index is None or sentence_model is None:
         raise HTTPException(503, "Semantic search not available (FAISS or SentenceTransformer not loaded)")
 
-    # Encode the query
-    query_embedding = sentence_model.encode([req.query]).astype(np.float32)
+    # Encode the query using fastembed
+    query_embedding = list(sentence_model.embed([req.query]))[0].reshape(1, -1).astype(np.float32)
     
     # Normalize (FAISS index may use inner product)
     norm = np.linalg.norm(query_embedding, axis=1, keepdims=True)
@@ -705,7 +703,7 @@ def ai_search(req: AISearchRequest):
             print(f"[AI-SEARCH] Gemini keyword extraction failed, using raw query: {e}")
 
     # Step 2: Encode and search FAISS
-    query_embedding = sentence_model.encode([search_query]).astype(np.float32)
+    query_embedding = list(sentence_model.embed([search_query]))[0].reshape(1, -1).astype(np.float32)
     norm = np.linalg.norm(query_embedding, axis=1, keepdims=True)
     if norm > 0:
         query_embedding = query_embedding / norm
