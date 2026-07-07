@@ -283,3 +283,34 @@ body::before {
   background: linear-gradient(to top, rgba(0,0,0,0.6), transparent);
   pointer-events: none;
 }
+
+/* -- Responsive Mobile Styles -- */
+@media (max-width: 768px) {
+  /* Make header stack vertically */
+  header {
+    flex-direction: column !important;
+    gap: 16px !important;
+    align-items: flex-start !important;
+  }
+  /* Reduce auth card padding */
+  .glass-card-strong {
+    padding: 32px 24px !important;
+  }
+  /* Tab list wrap */
+  .tab-list {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    justify-content: flex-start !important;
+  }
+  /* Modal responsive */
+  .modal-content {
+    width: 95% !important;
+    padding: 24px 16px !important;
+  }
+}
+@media (max-width: 768px) {
+  nav {
+    flex-wrap: wrap !important;
+    gap: 12px !important;
+  }
+}

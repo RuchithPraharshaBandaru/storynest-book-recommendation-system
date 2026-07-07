@@ -518,7 +518,7 @@ export default function Dashboard({ user, onLogout }) {
         {loading ? (
           <div style={{
             display: "grid",
-            gridTemplateColumns: "repeat(5, 1fr)",
+            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
             gap: 24,
           }}>
             {Array.from({ length: 10 }).map((_, i) => (
@@ -544,7 +544,7 @@ export default function Dashboard({ user, onLogout }) {
             {activeTab === "recommended" && (
               <div style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(5, 1fr)",
+                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
                 gap: 24,
               }}>
                 {recommendations.map((book, i) => (
@@ -570,7 +570,7 @@ export default function Dashboard({ user, onLogout }) {
             {activeTab === "popular" && (
               <div style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(5, 1fr)",
+                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
                 gap: 24,
               }}>
                 {popularBooks.map((book, i) => (
@@ -758,7 +758,7 @@ export default function Dashboard({ user, onLogout }) {
                         </h3>
                         <div style={{
                           display: "grid",
-                          gridTemplateColumns: "repeat(5, 1fr)",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
                           gap: 24,
                         }}>
                           {items.map((item) => (

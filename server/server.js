@@ -154,12 +154,12 @@ app.post("/auth/login", async (req, res) => {
 
     const user = await User.findOne({ email });
     if (!user) {
-      return res.status(401).json({ error: "Invalid credentials" });
+      return res.status(401).json({ error: "Email or password incorrect" });
     }
 
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) {
-      return res.status(401).json({ error: "Invalid credentials" });
+      return res.status(401).json({ error: "Email or password incorrect" });
     }
 
     const token = jwt.sign({ userId: user._id }, JWT_SECRET, {
