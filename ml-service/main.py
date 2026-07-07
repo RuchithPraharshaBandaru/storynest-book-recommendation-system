@@ -132,7 +132,7 @@ class SummarizeResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 @app.post("/proxy-match", response_model=ProxyMatchResponse)
-async def proxy_match(req: ProxyMatchRequest):
+def proxy_match(req: ProxyMatchRequest):
     """
     Finds the best proxy user based on recently liked books.
     """
@@ -219,7 +219,7 @@ def _get_content_scores(liked_book_ids: List[int]) -> np.ndarray:
 
 
 @app.post("/recommend", response_model=RecommendResponse)
-async def recommend(req: RecommendRequest):
+def recommend(req: RecommendRequest):
     """
     Generates hybrid recommendations.
     """
@@ -300,7 +300,7 @@ async def recommend(req: RecommendRequest):
 # ---------------------------------------------------------------------------
 
 @app.post("/explain", response_model=ExplainResponse)
-async def explain(req: ExplainRequest):
+def explain(req: ExplainRequest):
     """
     Uses Google Gemini to explain why a book was recommended based on reading history.
     """
@@ -369,7 +369,7 @@ async def explain(req: ExplainRequest):
 # ---------------------------------------------------------------------------
 
 @app.get("/health")
-async def health():
+def health():
     load_artifacts()
     return {
         "status": "ok",
