@@ -276,6 +276,24 @@ app.get("/books/:id", async (req, res) => {
 
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Wakes up the Python API using a GET request.
+ * Render's load balancer safely holds GET requests while the container boots,
+ * but it instantly rejects POST requests with 502 Bad Gateway if the service is asleep.
+ */
+async function wakeUpPython() {
+  try {
+    console.log(`[ML-WAKEUP] Sending GET /ping to wake up Python...`);
+    await axios.get(`${FASTAPI_URL}/ping`, { timeout: 30000 });
+  } catch (err) {
+    console.log(`[ML-WAKEUP] Ping failed, but container might still be booting:`, err.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // User Routes
 // ---------------------------------------------------------------------------
 
@@ -338,7 +356,8 @@ app.post("/user/onboard", authMiddleware, async (req, res) => {
     // Call FastAPI /proxy-match
     let proxy_svd_id = null;
     try {
-      console.log(`[ML-CALL] Waking up Python at: ${FASTAPI_URL}/proxy-match`);
+      await wakeUpPython();
+      console.log(`[ML-CALL] Calling POST ${FASTAPI_URL}/proxy-match`);
       const mlRes = await axios.post(`${FASTAPI_URL}/proxy-match`, {
         book_ids,
       });
@@ -394,7 +413,8 @@ app.get("/user/dashboard", authMiddleware, async (req, res) => {
 
     // Call FastAPI /recommend
     try {
-      console.log(`[ML-CALL] Waking up Python at: ${FASTAPI_URL}/recommend`);
+      await wakeUpPython();
+      console.log(`[ML-CALL] Calling POST ${FASTAPI_URL}/recommend`);
       const mlRes = await axios.post(`${FASTAPI_URL}/recommend`, {
         proxy_svd_id: user.proxy_svd_id,
         recent_liked_book_ids: user.read_history,
@@ -441,7 +461,8 @@ app.post("/user/explain", authMiddleware, async (req, res) => {
   try {
     const { user_read_history, recommended_book } = req.body;
 
-    console.log(`[ML-CALL] Getting explanation from: ${FASTAPI_URL}/explain`);
+    await wakeUpPython();
+    console.log(`[ML-CALL] Getting explanation from POST ${FASTAPI_URL}/explain`);
     const mlRes = await axios.post(`${FASTAPI_URL}/explain`, {
       user_read_history,
       recommended_book,

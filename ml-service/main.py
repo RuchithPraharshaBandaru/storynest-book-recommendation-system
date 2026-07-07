@@ -365,8 +365,13 @@ def explain(req: ExplainRequest):
         )
 
 # ---------------------------------------------------------------------------
-# Health check
+# Endpoint D: /health & /ping
 # ---------------------------------------------------------------------------
+
+@app.get("/ping")
+def ping():
+    """Lightweight endpoint specifically to wake up the server from sleep."""
+    return {"status": "awake"}
 
 @app.get("/health")
 def health():
