@@ -94,23 +94,34 @@ def load_artifacts():
             faiss_index = None
             print(f"[WARN] FAISS index could not be loaded ({e})")
 
-        # Load Sentence Transformer (Features 1, 7)
-        try:
-            from sentence_transformers import SentenceTransformer
-            sentence_model = SentenceTransformer("all-MiniLM-L6-v2")
-            print("[OK] SentenceTransformer loaded successfully")
-        except Exception as e:
-            sentence_model = None
-            print(f"[WARN] SentenceTransformer could not be loaded ({e})")
-
         norms = np.linalg.norm(book_embeddings, axis=1, keepdims=True)
         norms[norms == 0] = 1
         book_embeddings_normed = book_embeddings / norms
         index_to_book_id = {v: k for k, v in book_id_map.items()}
         _artifacts_loaded = True
+        
+        # Free memory
+        del book_embeddings
+        import gc
+        gc.collect()
+        
         print("[*] ML artifacts loaded successfully!")
     except Exception as e:
         print(f"[ERROR] Failed to load artifacts: {e}")
+
+def load_sentence_model():
+    global sentence_model
+    if sentence_model is not None:
+        return
+    try:
+        from sentence_transformers import SentenceTransformer
+        print("[*] Loading SentenceTransformer...")
+        sentence_model = SentenceTransformer("all-MiniLM-L6-v2")
+        print("[OK] SentenceTransformer loaded successfully")
+    except Exception as e:
+        sentence_model = None
+        print(f"[WARN] SentenceTransformer could not be loaded ({e})")
+
 
 
 # ---------------------------------------------------------------------------
@@ -283,7 +294,11 @@ def _get_content_scores(liked_book_ids: List[int],
     # Apply recency weighting on top (recent books matter more)
     recency = np.linspace(1, 2, len(liked_indices))
     final_weights = np.array(per_book_weights) * recency
-    final_weights = final_weights / final_weights.sum()
+    weight_sum = final_weights.sum()
+    if weight_sum > 0:
+        final_weights = final_weights / weight_sum
+    else:
+        final_weights = np.ones_like(final_weights) / len(final_weights)
     
     liked_emb = book_embeddings_normed[liked_indices]
     avg_emb = np.average(liked_emb, axis=0, weights=final_weights)
@@ -489,6 +504,8 @@ def explain(req: ExplainRequest):
     Uses Google Gemini to explain why a book was recommended based on reading history.
     """
     load_artifacts()
+    load_sentence_model()
+
     if not GEMINI_API_KEY:
         return ExplainResponse(
             explanation="This book was recommended based on your reading preferences "
@@ -511,8 +528,8 @@ def explain(req: ExplainRequest):
         client = genai.Client(api_key=GEMINI_API_KEY)
         
         models_to_try = [
-            "gemini-2.5-flash",
-            "gemini-2.5-flash-lite"
+            "gemini-1.5-flash",
+            "gemini-1.5-flash-8b"
         ]
         
         last_error = None
@@ -556,6 +573,7 @@ def semantic_search(req: SemanticSearchRequest):
     with SentenceTransformer and finds nearest books in the embedding space.
     """
     load_artifacts()
+    load_sentence_model()
     
     if faiss_index is None or sentence_model is None:
         raise HTTPException(503, "Semantic search not available (FAISS or SentenceTransformer not loaded)")
@@ -602,6 +620,7 @@ def similar_books(req: SimilarBooksRequest):
     Uses the book's existing embedding — no encoding needed.
     """
     load_artifacts()
+    load_sentence_model()
     
     if faiss_index is None:
         raise HTTPException(503, "Similar books not available (FAISS not loaded)")
@@ -666,7 +685,7 @@ def ai_search(req: AISearchRequest):
             )
             
             response = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-1.5-flash",
                 contents=intent_prompt,
             )
             search_query = response.text.strip()

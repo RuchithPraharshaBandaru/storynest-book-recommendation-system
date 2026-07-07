@@ -378,7 +378,9 @@ async function wakeUpPython() {
       await new Promise(resolve => setTimeout(resolve, 5000));
     }
   }
-  console.log(`[ML-WAKEUP] Gave up trying to wake up Python after 100 seconds.`);
+  const msg = `[ML-WAKEUP] Gave up trying to wake up Python after 100 seconds.`;
+  console.log(msg);
+  throw new Error(msg);
 }
 
 // ---------------------------------------------------------------------------
