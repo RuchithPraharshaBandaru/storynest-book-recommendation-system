@@ -9,8 +9,11 @@ import BookCard from "./BookCard";
  */
 export default function Dashboard({ user, onLogout }) {
   const navigate = useNavigate();
-  const [recommendations, setRecommendations] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [recommendations, setRecommendations] = useState(() => {
+    const cached = sessionStorage.getItem("dashboard_recommendations");
+    return cached ? JSON.parse(cached) : [];
+  });
+  const [loading, setLoading] = useState(recommendations.length === 0);
   const [error, setError] = useState("");
   const [userInfo, setUserInfo] = useState(null);
 
@@ -19,20 +22,26 @@ export default function Dashboard({ user, onLogout }) {
   });
   const [showLikedModal, setShowLikedModal] = useState(false);
 
-  const [randomBooks, setRandomBooks] = useState([]);
-  const [loadingRandom, setLoadingRandom] = useState(true);
+  const [randomBooks, setRandomBooks] = useState(() => {
+    const cached = sessionStorage.getItem("dashboard_randomBooks");
+    return cached ? JSON.parse(cached) : [];
+  });
+  const [loadingRandom, setLoadingRandom] = useState(randomBooks.length === 0);
 
   const [likedBooks, setLikedBooks] = useState([]);
-  const [popularBooks, setPopularBooks] = useState([]);
+  const [popularBooks, setPopularBooks] = useState(() => {
+    const cached = sessionStorage.getItem("dashboard_popularBooks");
+    return cached ? JSON.parse(cached) : [];
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
 
   useEffect(() => {
-    fetchRecommendations();
+    if (recommendations.length === 0) fetchRecommendations();
+    if (popularBooks.length === 0) fetchPopularBooks();
+    if (randomBooks.length === 0) fetchRandomBooks();
     fetchLikedBooks();
-    fetchPopularBooks();
-    fetchRandomBooks();
   }, []);
 
   // Save active tab
@@ -110,6 +119,7 @@ export default function Dashboard({ user, onLogout }) {
     try {
       const res = await api.get("/books/popular");
       setPopularBooks(res.data);
+      sessionStorage.setItem("dashboard_popularBooks", JSON.stringify(res.data));
     } catch (err) {
       console.error("Fetch popular error", err);
     }
@@ -120,6 +130,7 @@ export default function Dashboard({ user, onLogout }) {
     try {
       const res = await api.get("/books/random?limit=5");
       setRandomBooks(res.data);
+      sessionStorage.setItem("dashboard_randomBooks", JSON.stringify(res.data));
     } catch (err) {
       console.error("Fetch random error", err);
     } finally {
@@ -131,6 +142,7 @@ export default function Dashboard({ user, onLogout }) {
     try {
       const res = await api.get("/user/dashboard");
       setRecommendations(res.data.recommendations);
+      sessionStorage.setItem("dashboard_recommendations", JSON.stringify(res.data.recommendations));
       setUserInfo(res.data.user);
     } catch (err) {
       setError("Failed to load recommendations. Please try again.");

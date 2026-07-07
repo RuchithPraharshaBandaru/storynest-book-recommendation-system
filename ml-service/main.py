@@ -29,34 +29,52 @@ ARTIFACTS_DIR = Path(__file__).resolve().parent.parent / "artifacts"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 # ---------------------------------------------------------------------------
-# Load artifacts once at module level
+# Lazy Load ML artifacts to prevent Render timeout on cold starts
 # ---------------------------------------------------------------------------
-print("[*] Loading ML artifacts...")
+books_meta = None
+book_embeddings = None
+book_to_top_users = None
+book_id_map = None
+user_id_map = None
+svd_model = None
+SVD_AVAILABLE = False
+book_embeddings_normed = None
+index_to_book_id = None
+_artifacts_loaded = False
 
-books_meta: pd.DataFrame = pickle.load(open(ARTIFACTS_DIR / "books_meta.pkl", "rb"))
-book_embeddings: np.ndarray = np.load(ARTIFACTS_DIR / "book_embeddings.npy")
-book_to_top_users: dict = pickle.load(open(ARTIFACTS_DIR / "book_to_top_users.pkl", "rb"))
-book_id_map: dict = pickle.load(open(ARTIFACTS_DIR / "book_id_map.pkl", "rb"))
-user_id_map: dict = pickle.load(open(ARTIFACTS_DIR / "user_id_map.pkl", "rb"))
+def load_artifacts():
+    global books_meta, book_embeddings, book_to_top_users, book_id_map
+    global user_id_map, svd_model, SVD_AVAILABLE, book_embeddings_normed
+    global index_to_book_id, _artifacts_loaded
 
-# SVD model — loaded inside a try/except so the service can still start
-# even if scikit-surprise has DLL issues on certain Windows setups.
-try:
-    svd_model = pickle.load(open(ARTIFACTS_DIR / "svd_model.pkl", "rb"))
-    SVD_AVAILABLE = True
-    print("[OK] SVD model loaded successfully")
-except Exception as e:
-    svd_model = None
-    SVD_AVAILABLE = False
-    print(f"[WARN] SVD model could not be loaded ({e}). Collaborative filtering will use fallback scores.")
+    if _artifacts_loaded:
+        return
 
-# Pre-compute normalised embeddings for fast cosine similarity
-norms = np.linalg.norm(book_embeddings, axis=1, keepdims=True)
-norms[norms == 0] = 1  # avoid division by zero
-book_embeddings_normed = book_embeddings / norms
+    print("[*] Loading ML artifacts lazily...")
+    try:
+        books_meta = pickle.load(open(ARTIFACTS_DIR / "books_meta.pkl", "rb"))
+        book_embeddings = np.load(ARTIFACTS_DIR / "book_embeddings.npy")
+        book_to_top_users = pickle.load(open(ARTIFACTS_DIR / "book_to_top_users.pkl", "rb"))
+        book_id_map = pickle.load(open(ARTIFACTS_DIR / "book_id_map.pkl", "rb"))
+        user_id_map = pickle.load(open(ARTIFACTS_DIR / "user_id_map.pkl", "rb"))
+        
+        try:
+            svd_model = pickle.load(open(ARTIFACTS_DIR / "svd_model.pkl", "rb"))
+            SVD_AVAILABLE = True
+            print("[OK] SVD model loaded successfully")
+        except Exception as e:
+            svd_model = None
+            SVD_AVAILABLE = False
+            print(f"[WARN] SVD model could not be loaded ({e})")
 
-# Build reverse map: internal_index → book_id  (book_id_map is book_id → index)
-index_to_book_id = {v: k for k, v in book_id_map.items()}
+        norms = np.linalg.norm(book_embeddings, axis=1, keepdims=True)
+        norms[norms == 0] = 1
+        book_embeddings_normed = book_embeddings / norms
+        index_to_book_id = {v: k for k, v in book_id_map.items()}
+        _artifacts_loaded = True
+        print("[*] ML artifacts loaded successfully!")
+    except Exception as e:
+        print(f"[ERROR] Failed to load artifacts: {e}")
 
 # All known book_ids (for iteration)
 all_book_ids = books_meta["book_id"].tolist()
@@ -121,10 +139,9 @@ class SummarizeResponse(BaseModel):
 @app.post("/proxy-match", response_model=ProxyMatchResponse)
 async def proxy_match(req: ProxyMatchRequest):
     """
-    Given 3 book_ids the user selected during onboarding, find the single
-    dataset user_id that rated those books most highly (appears most often
-    across the top-user lists).
+    Finds the best proxy user based on recently liked books.
     """
+    load_artifacts()
     if len(req.book_ids) < 1:
         raise HTTPException(400, "At least 1 book_id is required")
 
@@ -158,6 +175,7 @@ async def proxy_match(req: ProxyMatchRequest):
 def _get_svd_scores(proxy_svd_id: int) -> np.ndarray:
     """Return an array of SVD predicted ratings for every book, indexed by
     the books_meta DataFrame index."""
+    load_artifacts()
     scores = np.zeros(len(books_meta), dtype=np.float64)
 
     if not SVD_AVAILABLE or svd_model is None:
@@ -178,6 +196,7 @@ def _get_svd_scores(proxy_svd_id: int) -> np.ndarray:
 def _get_content_scores(liked_book_ids: List[int]) -> np.ndarray:
     """Compute average cosine similarity between the liked books' embeddings
     and every other book's embedding."""
+    load_artifacts()
     liked_indices = []
     for bid in liked_book_ids:
         idx = book_id_map.get(bid)
@@ -207,9 +226,9 @@ def _get_content_scores(liked_book_ids: List[int]) -> np.ndarray:
 @app.post("/recommend", response_model=RecommendResponse)
 async def recommend(req: RecommendRequest):
     """
-    Generate top-5 hybrid recommendations by blending collaborative filtering
-    (SVD) and content-based (embedding cosine similarity) scores.
+    Generates hybrid recommendations.
     """
+    load_artifacts()
     liked_set = set(req.recent_liked_book_ids)
 
     # --- Collaborative scores ---
@@ -288,9 +307,9 @@ async def recommend(req: RecommendRequest):
 @app.post("/explain", response_model=ExplainResponse)
 async def explain(req: ExplainRequest):
     """
-    Use Google Gemini to generate a natural-language explanation for why
-    a book was recommended.
+    Uses Google Gemini to explain why a book was recommended based on reading history.
     """
+    load_artifacts()
     if not GEMINI_API_KEY:
         return ExplainResponse(
             explanation="This book was recommended based on your reading preferences "
@@ -356,9 +375,10 @@ async def explain(req: ExplainRequest):
 
 @app.get("/health")
 async def health():
+    load_artifacts()
     return {
         "status": "ok",
-        "books_loaded": len(books_meta),
+        "books_loaded": len(books_meta) if books_meta is not None else 0,
         "svd_available": SVD_AVAILABLE,
     }
 

@@ -256,7 +256,7 @@ export default function Onboarding({ onComplete }) {
                 opacity: selected.length === 3 ? 1 : 0.5,
               }}
             >
-              {submitting ? "Setting up…" : "Continue &rarr;"}
+              {submitting ? "Setting up…" : <>Continue &rarr;</>}
             </button>
           </div>
         </div>
