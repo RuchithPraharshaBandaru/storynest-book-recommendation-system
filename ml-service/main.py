@@ -49,6 +49,8 @@ index_to_book_id = None
 faiss_index = None
 sentence_model = None
 proxy_match_data = None
+import threading
+_artifacts_lock = threading.Lock()
 _artifacts_loaded = False
 
 def load_artifacts():
@@ -60,69 +62,78 @@ def load_artifacts():
     if _artifacts_loaded:
         return
 
-    print("[*] Loading ML artifacts lazily...")
-    try:
-        books_meta = pickle.load(open(ARTIFACTS_DIR / "books_meta.pkl", "rb"))
-        book_embeddings = np.load(ARTIFACTS_DIR / "book_embeddings.npy")
-        book_to_top_users = pickle.load(open(ARTIFACTS_DIR / "book_to_top_users.pkl", "rb"))
-        book_id_map = pickle.load(open(ARTIFACTS_DIR / "book_id_map.pkl", "rb"))
-        user_id_map = pickle.load(open(ARTIFACTS_DIR / "user_id_map.pkl", "rb"))
-        
-        try:
-            svd_model = pickle.load(open(ARTIFACTS_DIR / "svd_model.pkl", "rb"))
-            SVD_AVAILABLE = True
-            print("[OK] SVD model loaded successfully")
-        except Exception as e:
-            svd_model = None
-            SVD_AVAILABLE = False
-            print(f"[WARN] SVD model could not be loaded ({e})")
+    with _artifacts_lock:
+        if _artifacts_loaded:
+            return
 
-        # Load proxy_match.pkl (Feature 8)
+        print("[*] Loading ML artifacts lazily...")
         try:
-            proxy_match_data = pickle.load(open(ARTIFACTS_DIR / "proxy_match.pkl", "rb"))
-            print("[OK] proxy_match.pkl loaded successfully")
-        except Exception as e:
-            proxy_match_data = None
-            print(f"[WARN] proxy_match.pkl could not be loaded ({e})")
+            books_meta = pickle.load(open(ARTIFACTS_DIR / "books_meta.pkl", "rb"))
+            book_embeddings = np.load(ARTIFACTS_DIR / "book_embeddings.npy")
+            book_to_top_users = pickle.load(open(ARTIFACTS_DIR / "book_to_top_users.pkl", "rb"))
+            book_id_map = pickle.load(open(ARTIFACTS_DIR / "book_id_map.pkl", "rb"))
+            user_id_map = pickle.load(open(ARTIFACTS_DIR / "user_id_map.pkl", "rb"))
+            
+            try:
+                svd_model = pickle.load(open(ARTIFACTS_DIR / "svd_model.pkl", "rb"))
+                SVD_AVAILABLE = True
+                print("[OK] SVD model loaded successfully")
+            except Exception as e:
+                svd_model = None
+                SVD_AVAILABLE = False
+                print(f"[WARN] SVD model could not be loaded ({e})")
 
-        # Load FAISS index (Features 1, 2, 7)
-        try:
-            import faiss
-            faiss_index = faiss.read_index(str(ARTIFACTS_DIR / "faiss.index"))
-            print(f"[OK] FAISS index loaded ({faiss_index.ntotal} vectors)")
-        except Exception as e:
-            faiss_index = None
-            print(f"[WARN] FAISS index could not be loaded ({e})")
+            # Load proxy_match.pkl (Feature 8)
+            try:
+                proxy_match_data = pickle.load(open(ARTIFACTS_DIR / "proxy_match.pkl", "rb"))
+                print("[OK] proxy_match.pkl loaded successfully")
+            except Exception as e:
+                proxy_match_data = None
+                print(f"[WARN] proxy_match.pkl could not be loaded ({e})")
 
-        norms = np.linalg.norm(book_embeddings, axis=1, keepdims=True)
-        norms[norms == 0] = 1
-        book_embeddings_normed = book_embeddings / norms
-        index_to_book_id = {v: k for k, v in book_id_map.items()}
-        _artifacts_loaded = True
-        
-        # Free memory
-        del book_embeddings
-        import gc
-        gc.collect()
-        
-        print("[*] ML artifacts loaded successfully!")
-    except Exception as e:
-        print(f"[ERROR] Failed to load artifacts: {e}")
+            # Load FAISS index (Features 1, 2, 7)
+            try:
+                import faiss
+                faiss_index = faiss.read_index(str(ARTIFACTS_DIR / "faiss.index"))
+                print(f"[OK] FAISS index loaded ({faiss_index.ntotal} vectors)")
+            except Exception as e:
+                faiss_index = None
+                print(f"[WARN] FAISS index could not be loaded ({e})")
+
+            norms = np.linalg.norm(book_embeddings, axis=1, keepdims=True)
+            norms[norms == 0] = 1
+            book_embeddings_normed = book_embeddings / norms
+            index_to_book_id = {v: k for k, v in book_id_map.items()}
+            _artifacts_loaded = True
+            
+            # Free memory
+            del book_embeddings
+            import gc
+            gc.collect()
+            
+            print("[*] ML artifacts loaded successfully!")
+        except Exception as e:
+            print(f"[ERROR] Failed to load artifacts: {e}")
+
+_sentence_model_lock = threading.Lock()
 
 def load_sentence_model():
     global sentence_model
     if sentence_model is not None:
         return
-    try:
-        import torch
-        torch.set_num_threads(1)
-        from sentence_transformers import SentenceTransformer
-        print("[*] Loading SentenceTransformer...")
-        sentence_model = SentenceTransformer("all-MiniLM-L6-v2")
-        print("[OK] SentenceTransformer loaded successfully")
-    except Exception as e:
-        sentence_model = None
-        print(f"[WARN] SentenceTransformer could not be loaded ({e})")
+    with _sentence_model_lock:
+        if sentence_model is not None:
+            return
+        try:
+            import torch
+            torch.set_num_threads(1)
+            from sentence_transformers import SentenceTransformer
+            print("[*] Loading SentenceTransformer...")
+            sentence_model = SentenceTransformer("all-MiniLM-L6-v2")
+            print("[OK] SentenceTransformer loaded successfully")
+        except Exception as e:
+            sentence_model = None
+            print(f"[WARN] SentenceTransformer could not be loaded ({e})")
 
 
 
