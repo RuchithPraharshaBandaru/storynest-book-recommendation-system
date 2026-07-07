@@ -19,7 +19,21 @@ The StoryNest ML Engine operates across two distinct phases:
 
 ---
 
-## 2. Machine Learning Fundamentals
+## 2. Artifact Overview
+
+StoryNest's machine learning engine relies heavily on offline-generated artifacts. This allows the API to serve complex mathematical recommendations in milliseconds without expensive retraining.
+
+| Artifact | Purpose |
+|---|---|
+| `svd_model.pkl` | The trained Collaborative Filtering algorithm. |
+| `books_meta.pkl` | Contains essential offline metadata (title, authors) for fast lookup. |
+| `book_embeddings.npy` | The 10,000 × 384 dense embedding matrix representing all books. |
+| `faiss.index` | The optimized vector index used for rapid inner-product calculations. |
+| `proxy_match.pkl` | Maps book interactions to ideal proxy identities to solve cold-starts. |
+
+---
+
+## 3. Machine Learning Fundamentals
 
 ### What is Natural Language Processing (NLP)?
 NLP is a branch of artificial intelligence that gives computers the ability to understand text and spoken words in much the same way human beings can. For StoryNest, NLP is what allows the system to read a book's summary and understand its themes.
@@ -40,16 +54,18 @@ Books that have similar themes end up physically close to each other on this gra
 StoryNest does not use 2 dimensions. Our NLP model scores every book across **384 different conceptual dimensions**. A single book is represented as a dense vector of 384 numbers. 
 
 ### Cosine Similarity
-How do we know if two books are similar? We calculate the distance between their vectors in that 384-dimensional space.
-StoryNest uses **Cosine Similarity**, which measures the angle between two vectors rather than the absolute distance (Euclidean distance). 
-- Angle of 0° (Cosine 1.0): Identical themes.
-- Angle of 90° (Cosine 0.0): Completely unrelated.
+How do we know if two books are similar? We calculate the distance between their vectors in that 384-dimensional space. StoryNest uses **Cosine Similarity**, which measures the angle between two vectors rather than the absolute distance (Euclidean distance). 
 
-*Example:* Even if *Harry Potter* has a 500-word summary and *A Wizard of Earthsea* has a 50-word summary, their vectors will point in the exact same direction (magic, coming-of-age). Cosine similarity correctly identifies them as a match, whereas Euclidean distance might fail because the magnitudes of the texts differ.
+The formula for Cosine Similarity is:
+```text
+Cosine(A,B) = (A·B) / (|A||B|)
+```
+
+During initialization, StoryNest normalizes all vectors to a unit length of 1. Because `|A| = |B| = 1`, the equation is radically simplified. StoryNest only has to compute the **Dot Product** (`A·B`), which is exponentially faster while remaining mathematically equivalent to Cosine Similarity.
 
 ---
 
-## 3. How Transformers Work
+## 4. How Transformers Work
 
 ### The NLP Revolution
 Before 2017, NLP relied on recurrent neural networks (RNNs) that read text sequentially. They would often "forget" the beginning of a paragraph by the time they reached the end. 
@@ -57,27 +73,29 @@ Before 2017, NLP relied on recurrent neural networks (RNNs) that read text seque
 ### Self-Attention
 Transformers changed everything by processing all words simultaneously. The core mechanism is **Self-Attention**. When the model reads the word "bank" in the sentence "I sat by the river bank," self-attention allows the model to look at the word "river" and realize "bank" means dirt, not a financial institution.
 
+During pretraining, the transformer learns statistical relationships between words by predicting masked or neighboring tokens across billions of sentences. As a result, books discussing similar concepts produce nearby vectors even if they use completely different vocabulary.
+
 ### Why `all-MiniLM-L6-v2`
 StoryNest uses the `all-MiniLM-L6-v2` transformer model. It was trained by Microsoft on over a billion sentences. We chose it because it is specifically optimized for **Sentence Similarity**. It condenses entire paragraphs into a highly accurate 384-dimensional vector, and it is small enough to run on CPUs.
 
 ### FastEmbed & The ONNX Runtime
-Running massive PyTorch transformer libraries in a cloud deployment consumes hundreds of megabytes of RAM. StoryNest bypassed this by using **FastEmbed**. FastEmbed rips out PyTorch entirely and runs the exact same `all-MiniLM-L6-v2` model weights through the **ONNX Runtime**—a stripped-down, C++ based engine. This optimization slashed the ML Service memory usage from 471MB to 215MB, allowing it to run flawlessly on Render's free tier.
+Running massive PyTorch transformer libraries in a cloud deployment consumes hundreds of megabytes of RAM. FastEmbed replaces the PyTorch inference runtime with ONNX Runtime while preserving compatibility with the same `all-MiniLM-L6-v2` model. This optimization slashed the ML Service memory usage from 471MB to 215MB, allowing it to run flawlessly on Render's free tier.
 
 ---
 
-## 4. Offline Training Pipeline
+## 5. Offline Training Pipeline
 
 The ML service relies on artifacts generated during an intensive offline training phase.
 
 1. **The Dataset:** We utilized a subset of the Goodreads dataset containing 10,000 books and millions of user ratings.
 2. **SVD Training:** We trained a Singular Value Decomposition (SVD) algorithm using `scikit-surprise`. SVD finds hidden latent factors between users and books to power the collaborative filtering. This is saved as `svd_model.pkl`.
-3. **Embedding Generation:** We passed all 10,000 book descriptions through the transformer to generate the 384D vectors, saved as the dense NumPy array `book_embeddings.npy`.
+3. **Embedding Generation:** We passed all 10,000 book descriptions through the transformer to generate the 384D vectors, saved as the dense NumPy array `book_embeddings.npy`. **This process is performed only once during offline training.** During inference, StoryNest simply loads the serialized embeddings instead of recomputing them.
 4. **FAISS Indexing:** We normalized those vectors and loaded them into a highly optimized index, saved as `faiss.index`.
-5. **Proxy Matching:** Because we cannot retrain the SVD model every time a new user signs up, we created `proxy_match.pkl`. This maps book IDs to the generic training-set users who loved those books most. New users are assigned a "proxy" identity to bootstrap their collaborative recommendations instantly.
+5. **Proxy Matching:** Because we cannot retrain the SVD model every time a new user signs up, we built `proxy_match.pkl` completely offline. This maps book IDs to the generic training-set users who loved those books most. New users are assigned a "proxy" identity to bootstrap their collaborative recommendations instantly.
 
 ---
 
-## 5. Three Types of Search
+## 6. Three Types of Search
 
 StoryNest implements three distinct search paradigms:
 
@@ -87,93 +105,115 @@ StoryNest implements three distinct search paradigms:
 - **Limitations:** Fails completely on conceptual searches (e.g., "wizards at school").
 
 ### 2. Semantic Search
-- **How it works:** The user's query is passed through the ONNX transformer. The resulting 384D vector is fed into FAISS, which returns the nearest book vectors.
-- **Best for:** Vibes and plots. A search for "space battles with aliens" will return *Ender's Game* and *The Expanse*, even if those words aren't in the summaries.
+- **How it works:** The user's query is passed through the ONNX transformer to create a 384D vector. This query vector is fed into FAISS, which returns the nearest book vectors.
+- **Example Flow:**
+  ```text
+  "space battles with aliens" 
+        ↓ 
+  [0.012, -0.441, 0.822, ...] (384-dimensional vector) 
+        ↓ 
+  Nearest FAISS Vectors 
+        ↓ 
+  Ender's Game, The Expanse, Old Man's War
+  ```
 
 ### 3. AI Search
-- **How it works:** A conversational interface. The user's prompt (e.g., "I want a fantasy book similar to Dune but shorter") is sent to Google Gemini. Gemini extracts the core themes, and StoryNest runs those extracted themes through the Semantic Search pipeline.
-- **Best for:** Highly complex, multi-layered, conversational requests.
+- **How it works:** Google Gemini does not directly recommend books. Instead, it rewrites a user's conversational request into a concise semantic representation emphasizing genres, themes, moods, settings, and relationships. This rewritten query is then embedded using FastEmbed and searched through the FAISS vector index.
+- **Best for:** Highly complex, multi-layered, conversational requests ("I want a fantasy book with dragons, politics and slow romance").
 
 ---
 
-## 6. How FAISS Works
+## 7. How FAISS Works
 
-### Why normal search is slow
-If a user does a semantic search, we have to calculate the distance between their 1 query vector and all 10,000 book vectors across 384 dimensions. Doing this sequentially (a flat scan) takes immense computing power.
+FAISS (Facebook AI Similarity Search) is an algorithm designed by Meta for immense vector datasets. 
 
-### Vector Indexing with FAISS
-**FAISS** (Facebook AI Similarity Search) is an algorithm designed by Meta. It clusters vectors into localized neighborhoods. 
+FAISS stores all normalized embedding vectors in a highly optimized index. StoryNest uses `IndexFlatIP`, which performs exact inner-product search using optimized C++ matrix operations. Since all vectors are normalized to unit length, the inner product becomes mathematically equivalent to cosine similarity.
 
-### `IndexFlatIP`
-StoryNest uses `IndexFlatIP` (Inner Product). Because we mathematically normalize all our vectors to a length of 1.0 during startup, taking the Inner Product (dot product) of two vectors is mathematically identical to calculating their Cosine Similarity. FAISS executes this highly optimized C++ matrix multiplication in fractions of a millisecond (`O(log n)` retrieval time).
+Although the algorithm compares against every vector in the dataset, FAISS performs these computations using highly optimized SIMD and BLAS routines, making retrieval effectively instantaneous for datasets of this size (~10,000 books).
 
 ---
 
-## 7. Hybrid Recommendation Engine
+## 8. Hybrid Recommendation Engine
 
-The core `/recommend` endpoint calculates a final score for all 10,000 books in real-time. It uses a heavily engineered 5-signal weighting formula.
+The core `/recommend` endpoint calculates a final score for all 10,000 books in real-time. It uses a heavily engineered 6-signal weighting formula.
 
 ```python
 Final Score = (
     0.30 * Content_Similarity + 
-    0.25 * SVD_Score + 
+    0.25 * Collaborative_SVD + 
     0.15 * Favourites_Boost + 
     0.15 * Ratings_Boost + 
+    0.10 * Recency_Boost +
     0.05 * Feedback_Boost
 )
 ```
 
 1. **Content Similarity (30%):** The average vector of the user's read history is compared to all 10,000 books via dot product.
-2. **SVD Score (25%):** The collaborative filtering prediction for the user's proxy identity.
+2. **Collaborative SVD (25%):** The collaborative filtering prediction for the user's proxy identity.
 3. **Favourites Boost (15%):** Extra content similarity weight applied specifically toward books the user marked as absolute favorites.
 4. **Ratings Boost (15%):** Extra weight applied toward books the user rated 4 stars or higher.
-5. **Feedback Boost (5%):** Explicit penalties (-1.0) or boosts (+0.1) based on the user clicking "Not Interested" or "Helpful" on previous recommendations.
+5. **Recency Boost (10%):** A mathematical adjustment to prioritize content similarity based heavily on the user's *most recently* liked books.
+6. **Feedback Boost (5%):** Explicit penalties (-1.0) or boosts (+0.1) based on the user clicking "Not Interested" or "Helpful" on previous recommendations.
 
 **Diversity Filtering:** Once the top 100 books are scored, a diversity filter runs to ensure no single author dominates the top 10 results shown to the user.
 
 ---
 
+## 9. AI Explanation Engine
+
+### Why an LLM is needed
+Mathematical vectors know *that* two books are similar, but they cannot explain *why* in human English.
+
+### The Pipeline
+When a user clicks "Ask AI Why", we execute a targeted pipeline:
+1. **Backend Similarity:** We run a localized FAISS search to find the 1 or 2 books from the user's read history that are most mathematically similar to the recommended book.
+2. **Prompt Engineering:** We inject *only* those 1-2 books into a zero-shot prompt. (Passing their entire 50-book history would confuse the LLM and waste tokens).
+3. **Gemini Generation:** We ask `gemini-2.5-flash` to find the thematic link. It returns a personalized sentence: *"Because you liked [Book A], you might enjoy this for its intense political intrigue."*
+
 ---
 
-## 9. Backend Architecture
+## 10. Backend Architecture
 
 ### The API Gateway Proxy Pattern
 The React frontend NEVER communicates directly with the Python ML service. 
 `React Frontend → Node.js API Gateway (Express) → Python ML Service (FastAPI)`
 
+The Node.js service intentionally contains no machine learning logic. Its responsibilities are authentication, MongoDB access, request validation, and proxying ML requests to the FastAPI microservice.
+
 This provides:
 1. **Security:** The ML URL is hidden from the browser.
-2. **Authentication:** Node.js securely handles JWT validation and MongoDB data fetching.
-3. **Resilience:** The Node.js server seamlessly handles the "Cold Start" sleep states of the Python server, holding requests until Python wakes up.
+2. **Resilience:** The Node.js server seamlessly handles the "Cold Start" sleep states of the Python server, holding requests until Python wakes up.
 
 ### Thread-Safe Lazy Loading
 The `.pkl` and `.npy` artifacts are massive. If they were loaded into RAM globally at startup, the server would crash instantly. 
-StoryNest uses **Lazy Loading**: the artifacts are only loaded the exact moment the first user requests a recommendation. To prevent FastAPI's multi-threading from causing race conditions (two requests trying to load the artifacts at the same millisecond), we wrapped the initialization in a strict `threading.Lock()`.
+StoryNest uses **Lazy Loading**: the artifacts are only loaded the exact moment the first user requests a recommendation. To prevent FastAPI's multi-threading from causing race conditions, we wrapped the initialization in a strict `threading.Lock()`.
 
 ---
 
-## 10. Performance Optimizations
+## 11. Performance Optimizations
 
-- **FastEmbed Migration:** Replaced massive PyTorch dependencies with the ONNX runtime.
+- **FastEmbed Migration:** Replaced PyTorch inference runtime with ONNX runtime.
 - **RAM Optimization:** The SVD model was manually stripped of `trainset.ur` and `trainset.ir` during offline training, shrinking it from 150MB to 70MB.
 - **In-Memory Deletion:** Once `book_embeddings` are normalized and loaded into FAISS, the raw Numpy arrays are deleted from RAM (`del book_embeddings`) to free up memory.
 - **External Wake Pings:** Implemented browser-side fire-and-forget `GET /ping` requests to reliably wake the Python ML service on Render's free tier.
 
 ---
 
-## 11. Future Improvements
+## 12. Future Improvements
 
 - **Online Learning:** Currently, the SVD model requires offline batch retraining. Moving to an online learning algorithm (like Vowpal Wabbit) would allow real-time collaborative updates.
-- **HNSW Indexes:** Upgrading FAISS from `IndexFlatIP` to `IndexHNSW` (Hierarchical Navigable Small World) for sub-millisecond retrieval on datasets exceeding 1,000,000 books.
-- **Distributed Recommendation:** Sharding the FAISS index across multiple microservices.
+- **Approximate Nearest Neighbor Retrieval:** Upgrading FAISS from exact `IndexFlatIP` search to `IndexHNSW` (Hierarchical Navigable Small World) for sub-millisecond retrieval on datasets exceeding 1,000,000 books.
+- **Learning-to-Rank (LTR):** Introducing an XGBoost reranking layer above the hybrid score.
+- **Graph Neural Networks (GNN):** Representing users and books as nodes in a graph to uncover deep relational connections.
+- **RAG-powered Book Summaries:** Generating dynamically personalized summaries based on user interests.
 
 ---
 
-## 12. Complete End-to-End Example
+## 13. Complete End-to-End Example
 
 1. **Signup & Onboarding:** Alice signs up. Node.js saves her to MongoDB. She is forced to pick 3 books (e.g., *Dune*, *Foundation*, *Ender's Game*).
 2. **Proxy Matching:** The ML Service receives the 3 IDs, checks `proxy_match.pkl`, and assigns Alice to a "Sci-Fi Proxy Cluster".
-3. **Recommendation Generation:** Alice visits the dashboard. The ML service calculates her 5-signal Hybrid score, blending her proxy's collaborative tastes with the 384D mathematical average of her 3 chosen books. 
+3. **Recommendation Generation:** Alice visits the dashboard. The ML service calculates her 6-signal Hybrid score, blending her proxy's collaborative tastes with the 384D mathematical average of her 3 chosen books. 
 4. **Delivery:** The Top 10 books (e.g., *The Expanse*) are returned to Node.js, enriched with covers from MongoDB, and displayed in React.
 5. **AI Explanation:** Alice clicks "Ask AI Why" on *The Expanse*. The ML service finds that *Ender's Game* is mathematically closest. Gemini generates the text: *"Because you liked Ender's Game, you'll love the tactical space combat in this book."* 
 6. **Feedback Loop:** Alice clicks "Not Interested" on a romance book. Node.js saves this feedback. On her next refresh, the ML service applies a `-1.0` mathematical penalty, instantly banishing romance from her feed.
