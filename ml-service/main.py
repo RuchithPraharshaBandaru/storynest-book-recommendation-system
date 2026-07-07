@@ -114,6 +114,8 @@ def load_sentence_model():
     if sentence_model is not None:
         return
     try:
+        import torch
+        torch.set_num_threads(1)
         from sentence_transformers import SentenceTransformer
         print("[*] Loading SentenceTransformer...")
         sentence_model = SentenceTransformer("all-MiniLM-L6-v2")
@@ -504,7 +506,6 @@ def explain(req: ExplainRequest):
     Uses Google Gemini to explain why a book was recommended based on reading history.
     """
     load_artifacts()
-    load_sentence_model()
 
     if not GEMINI_API_KEY:
         return ExplainResponse(
@@ -620,7 +621,6 @@ def similar_books(req: SimilarBooksRequest):
     Uses the book's existing embedding — no encoding needed.
     """
     load_artifacts()
-    load_sentence_model()
     
     if faiss_index is None:
         raise HTTPException(503, "Similar books not available (FAISS not loaded)")
