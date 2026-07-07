@@ -127,8 +127,6 @@ function AppRoutes() {
         element={
           !user ? (
             <Navigate to="/" replace />
-          ) : !user.onboarded ? (
-            <Navigate to="/onboarding" replace />
           ) : (
             <BookDetails />
           )

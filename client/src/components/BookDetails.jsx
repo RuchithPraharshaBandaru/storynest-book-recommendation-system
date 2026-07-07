@@ -14,11 +14,8 @@ export default function BookDetails() {
   useEffect(() => {
     async function fetchBookAndLikeStatus() {
       try {
-        const res = await fetch(`http://localhost:5000/books/${id}`);
-        if (!res.ok) {
-          throw new Error("Failed to fetch book");
-        }
-        const data = await res.json();
+        const res = await api.get(`/books/${id}`);
+        const data = res.data;
         setBook(data);
 
         // Check if liked
@@ -64,8 +61,16 @@ export default function BookDetails() {
       <div style={{ textAlign: "center", padding: "100px 20px", color: "var(--text-primary)" }}>
         <h2>Book not found</h2>
         <p style={{ color: "var(--danger)" }}>{error}</p>
-        <button onClick={() => navigate("/dashboard")} className="btn-primary" style={{ marginTop: 24, padding: "10px 20px" }}>
-          Back to Dashboard
+        <button 
+          onClick={() => {
+            const userStr = localStorage.getItem("bookrec_user");
+            const user = userStr ? JSON.parse(userStr) : null;
+            navigate(user && !user.onboarded ? "/onboarding" : "/dashboard");
+          }} 
+          className="btn-primary" 
+          style={{ marginTop: 24, padding: "10px 20px" }}
+        >
+          Back
         </button>
       </div>
     );
@@ -74,7 +79,11 @@ export default function BookDetails() {
   return (
     <div style={{ maxWidth: 1000, margin: "0 auto", padding: "60px 24px" }} className="animate-fade-in-up">
       <button 
-        onClick={() => navigate("/dashboard")} 
+        onClick={() => {
+          const userStr = localStorage.getItem("bookrec_user");
+          const user = userStr ? JSON.parse(userStr) : null;
+          navigate(user && !user.onboarded ? "/onboarding" : "/dashboard");
+        }} 
         style={{
           background: "rgba(255,255,255,0.05)",
           border: "1px solid var(--border-glass)",
@@ -89,7 +98,7 @@ export default function BookDetails() {
           transition: "all 0.2s"
         }}
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "inline-block", marginRight: 8, verticalAlign: "middle" }}><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg> Back to Dashboard
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "inline-block", marginRight: 8, verticalAlign: "middle" }}><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg> Back
       </button>
 
       <div style={{ display: "flex", gap: 48, alignItems: "flex-start", flexWrap: "wrap" }}>
