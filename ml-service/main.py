@@ -529,8 +529,8 @@ def explain(req: ExplainRequest):
         client = genai.Client(api_key=GEMINI_API_KEY)
         
         models_to_try = [
-            "gemini-1.5-flash",
-            "gemini-1.5-flash-8b"
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite"
         ]
         
         last_error = None
@@ -685,7 +685,7 @@ def ai_search(req: AISearchRequest):
             )
             
             response = client.models.generate_content(
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 contents=intent_prompt,
             )
             search_query = response.text.strip()
