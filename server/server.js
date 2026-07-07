@@ -361,26 +361,7 @@ app.get("/books/:id", async (req, res) => {
  * but it instantly rejects POST requests with 502 Bad Gateway if the service is asleep.
  */
 async function wakeUpPython() {
-  console.log(`[ML-WAKEUP] Sending GET /ping to wake up Python...`);
-  let attempts = 0;
-  const maxAttempts = 20; // 20 * 5s = 100 seconds max wait
-  
-  while (attempts < maxAttempts) {
-    try {
-      // 10 second timeout per ping attempt
-      await axios.get(`${FASTAPI_URL}/ping`, { timeout: 10000 });
-      console.log(`[ML-WAKEUP] Python is awake and responded to ping!`);
-      return;
-    } catch (err) {
-      attempts++;
-      console.log(`[ML-WAKEUP] Ping attempt ${attempts} failed: ${err.message}. Retrying in 5s...`);
-      // Wait 5 seconds before retrying
-      await new Promise(resolve => setTimeout(resolve, 5000));
-    }
-  }
-  const msg = `[ML-WAKEUP] Gave up trying to wake up Python after 100 seconds.`;
-  console.log(msg);
-  throw new Error(msg);
+  // Disabled: Render wakes up the service automatically on the first actual request.
 }
 
 // ---------------------------------------------------------------------------
