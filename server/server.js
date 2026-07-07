@@ -338,12 +338,15 @@ app.post("/user/onboard", authMiddleware, async (req, res) => {
     // Call FastAPI /proxy-match
     let proxy_svd_id = null;
     try {
+      console.log(`[ML-CALL] Waking up Python at: ${FASTAPI_URL}/proxy-match`);
       const mlRes = await axios.post(`${FASTAPI_URL}/proxy-match`, {
         book_ids,
       });
       proxy_svd_id = mlRes.data.proxy_svd_id;
     } catch (mlErr) {
-      console.error("FastAPI /proxy-match error:", mlErr.message);
+      console.error("[ML-ERROR] /proxy-match failed:", mlErr.message);
+      if (mlErr.response) console.error("Response data:", mlErr.response.data);
+      if (mlErr.code) console.error("Axios Code:", mlErr.code);
       // Use a fallback proxy ID (a common user)
       proxy_svd_id = 314;
     }
@@ -390,35 +393,43 @@ app.get("/user/dashboard", authMiddleware, async (req, res) => {
     }
 
     // Call FastAPI /recommend
-    const mlRes = await axios.post(`${FASTAPI_URL}/recommend`, {
-      proxy_svd_id: user.proxy_svd_id,
-      recent_liked_book_ids: user.read_history,
-    });
+    try {
+      console.log(`[ML-CALL] Waking up Python at: ${FASTAPI_URL}/recommend`);
+      const mlRes = await axios.post(`${FASTAPI_URL}/recommend`, {
+        proxy_svd_id: user.proxy_svd_id,
+        recent_liked_book_ids: user.read_history,
+      });
 
-    const mlRecommendations = mlRes.data.recommendations;
-    
-    // Fetch full book details from MongoDB for the recommended books
-    const bookIds = mlRecommendations.map(r => r.book_id);
-    const dbBooks = await Book.find({ book_id: { $in: bookIds } });
-    
-    // Merge ML content with DB fields (so we keep the 'content' field for explanations, but add cover_image_url)
-    const enrichedRecommendations = mlRecommendations.map(mlBook => {
-      const dbBook = dbBooks.find(b => b.book_id === mlBook.book_id);
-      return {
-        ...mlBook,
-        cover_image_url: dbBook ? dbBook.cover_image_url : "",
-        average_rating: dbBook ? dbBook.average_rating : 0,
-        ratings_count: dbBook ? dbBook.ratings_count : 0
-      };
-    });
+      const mlRecommendations = mlRes.data.recommendations;
+      
+      // Fetch full book details from MongoDB for the recommended books
+      const bookIds = mlRecommendations.map(r => r.book_id);
+      const dbBooks = await Book.find({ book_id: { $in: bookIds } });
+      
+      // Merge ML content with DB fields (so we keep the 'content' field for explanations, but add cover_image_url)
+      const enrichedRecommendations = mlRecommendations.map(mlBook => {
+        const dbBook = dbBooks.find(b => b.book_id === mlBook.book_id);
+        return {
+          ...mlBook,
+          cover_image_url: dbBook ? dbBook.cover_image_url : "",
+          average_rating: dbBook ? dbBook.average_rating : 0,
+          ratings_count: dbBook ? dbBook.ratings_count : 0
+        };
+      });
 
-    res.json({
-      recommendations: enrichedRecommendations,
-      user: {
-        username: user.username,
-        read_history: user.read_history,
-      },
-    });
+      res.json({
+        recommendations: enrichedRecommendations,
+        user: {
+          username: user.username,
+          read_history: user.read_history,
+        },
+      });
+    } catch (mlErr) {
+      console.error("[ML-ERROR] /recommend failed:", mlErr.message);
+      if (mlErr.response) console.error("Response data:", mlErr.response.data);
+      if (mlErr.code) console.error("Axios Code:", mlErr.code);
+      return res.status(502).json({ error: "Failed to fetch recommendations" });
+    }
   } catch (err) {
     console.error("Dashboard error:", err);
     res.status(500).json({ error: "Failed to fetch recommendations" });
@@ -430,6 +441,7 @@ app.post("/user/explain", authMiddleware, async (req, res) => {
   try {
     const { user_read_history, recommended_book } = req.body;
 
+    console.log(`[ML-CALL] Getting explanation from: ${FASTAPI_URL}/explain`);
     const mlRes = await axios.post(`${FASTAPI_URL}/explain`, {
       user_read_history,
       recommended_book,
@@ -437,8 +449,10 @@ app.post("/user/explain", authMiddleware, async (req, res) => {
 
     res.json({ explanation: mlRes.data.explanation });
   } catch (err) {
-    console.error("Explain error:", err);
-    res.status(500).json({ error: "Failed to generate explanation" });
+    console.error("[ML-ERROR] /explain failed:", err.message);
+    if (err.response) console.error("Response data:", err.response.data);
+    if (err.code) console.error("Axios Code:", err.code);
+    res.status(502).json({ error: "Failed to generate explanation" });
   }
 });
 
