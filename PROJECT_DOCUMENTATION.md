@@ -4,7 +4,17 @@ This document serves as the absolute, exhaustive source of truth for the **Story
 
 ---
 
-## 1. Executive Summary & Task History
+## 1. Tech Stack
+
+- **Frontend:** React, Tailwind CSS, Vite
+- **API Gateway:** Node.js, Express
+- **Database:** MongoDB
+- **ML Service:** FastAPI, NumPy, scikit-surprise, FAISS, FastEmbed
+- **AI Integrations:** Google Gemini
+
+---
+
+## 2. Executive Summary & Task History
 
 StoryNest is an AI-powered, hybrid recommendation engine built with React (Frontend), Node.js (API Gateway), and FastAPI/Python (ML Service). 
 
@@ -14,15 +24,49 @@ StoryNest is an AI-powered, hybrid recommendation engine built with React (Front
 3. **Lazy Loading & Vercel SPA**: Implemented lazy loading for the huge `books_meta.pkl` and `book_embeddings.npy` artifacts. Configured Vercel to properly handle React SPA routing.
 4. **SVD Model Optimization**: The Collaborative Filtering model (`scikit-surprise`) originally consumed ~200MB because it retained all raw training ratings. We manually stripped `svd.trainset.ur` and `svd.trainset.ir`, reducing the pickled object size from ~150MB down to ~70MB without breaking `svd.predict()`.
 5. **The Google Gemini Explanations**: Integrated `google-genai` to dynamically explain recommendations based on a user's `liked_books`. We experienced Gemini API 400 errors, updated the models to `gemini-2.5-flash`, and established a fallback to `gemini-2.5-flash-lite`.
-6. **The Render Cold-Start Fix**: Render puts free-tier instances to sleep. The Node.js server was initially pinging the Python server aggressively, creating annoying logs. We silenced the polling loop (`wakeUpPython()`) to seamlessly hold GET requests and prevent POST requests from bouncing with a 502 error during wakeup.
+6. **The Render Cold-Start Fix**: Render puts free-tier instances to sleep ("Cold Start" means the server shuts down when inactive and takes several seconds to boot back up when a new request arrives). The Node.js server was initially pinging the Python server aggressively, creating annoying logs. We silenced the polling loop (`wakeUpPython()`) to seamlessly hold GET requests and prevent POST requests from bouncing with a 502 error during wakeup.
 7. **The Great Memory Crisis (OOM Kills)**: The Python service kept crashing with 502/503 errors on Render's 512MB RAM tier. We traced this to PyTorch allocating massive OpenMP threading buffers (`torch.set_num_threads(1)` reduced it to 471MB). 
-8. **The FastAPI Threadpool Race Condition**: Fast API spawned multiple threads for synchronous endpoints (`/similar-books`, `/recommend`). They all called `load_artifacts()` simultaneously, causing one thread to delete `book_embeddings` while another was using it (`NameError: name 'book_embeddings' is not defined`). We fixed this with a classic `threading.Lock()` singleton pattern.
-9. **The Ultimate Nuclear Memory Fix (PyTorch to FastEmbed)**: Even at 471MB, PyTorch was too unstable for Render. We completely ripped PyTorch and `sentence-transformers` out of the project, replacing it with `fastembed`. This migrated the `all-MiniLM-L6-v2` embedding generation to the ONNX Runtime, slashing memory usage from 471MB down to a breathtaking **215MB** and solving the crashes permanently.
-10. **Responsive UI Overhaul**: Finally, we stripped away hardcoded CSS grid columns (`repeat(5, 1fr)`) and replaced them with `repeat(auto-fit, minmax(200px, 1fr))`, ensuring the entire application flows beautifully on mobile phones and tablets.
+8. **The FastAPI Threadpool Race Condition**: Fast API spawned multiple threads for synchronous endpoints (`/similar-books`, `/recommend`). They all called `load_artifacts()` simultaneously, causing one thread to delete `book_embeddings` while another was using it (`NameError: name 'book_embeddings' is not defined`). We fixed this with a classic `threading.Lock()` singleton pattern so that multiple concurrent requests share a single initialization.
+9. **Migration to FastEmbed (ONNX Runtime)**: Even at 471MB, PyTorch was too unstable for Render. We completely ripped PyTorch and `sentence-transformers` out of the project, replacing it with `fastembed`. This migrated the `all-MiniLM-L6-v2` embedding generation to the ONNX Runtime, slashing memory usage from 471MB down to a breathtaking **215MB** and solving the crashes permanently.
+10. **Responsive UI Overhaul**: Finally, we stripped away hardcoded CSS grid columns (`repeat(5, 1fr)`) and replaced them with `repeat(auto-fit, minmax(200px, 1fr))`, ensuring a fully responsive layout using CSS Grid auto-fit, responsive breakpoints, and flexible layouts optimized for desktop, tablet, and mobile devices.
 
 ---
 
-## 2. Core Features Deep Dive
+## 3. Recommendation Pipeline
+
+To understand the system end-to-end, here is the standard data flow for generating a hybrid recommendation:
+
+```text
+User Login
+   ↓
+Node API
+   ↓
+Fetch User Profile
+   ↓
+Liked Books
+   ↓
+Python ML Service
+   ↓
+Collaborative Filtering (SVD)
+   ↓
+Content Similarity (FAISS)
+   ↓
+Hybrid Ranking
+   ↓
+Top 100
+   ↓
+Diversity Filter
+   ↓
+Top 10
+   ↓
+Node
+   ↓
+React Dashboard
+```
+
+---
+
+## 4. Core Features Deep Dive
 
 ### Feature 1: The Hybrid Recommendation Engine (`/recommend`)
 - **How it works:** It combines Collaborative Filtering (CF) and Content-Based Filtering (CBF).
@@ -33,19 +77,41 @@ StoryNest is an AI-powered, hybrid recommendation engine built with React (Front
 
 ### Feature 2: Semantic Search (`/semantic-search`)
 - **How it works:** When a user searches for "books about space battles", the text is sent to the ML service.
-- **The Engine:** `fastembed` (using ONNX Runtime) encodes the text into a 384-dimensional vector using `all-MiniLM-L6-v2`.
-- **The Search:** This vector is fed into a highly optimized Facebook AI Similarity Search (FAISS) `IndexFlatIP`. FAISS returns the Top N most mathematically similar books in milliseconds.
+- **The Engine:** `fastembed` generates embeddings using the same `all-MiniLM-L6-v2` model through ONNX Runtime, providing embedding compatibility while significantly reducing memory usage.
+- **The Search:** This vector is fed into a highly optimized Facebook AI Similarity Search (FAISS) `IndexFlatIP`. The FAISS index stores the precomputed book embeddings, enabling approximate nearest-neighbor search in milliseconds instead of comparing every book vector individually.
 
 ### Feature 3: AI Explanations (`/explain`)
-- **How it works:** When a user clicks "Ask AI Why", the ML service receives the target book and the user's read history.
-- **The Engine:** We pass a highly engineered zero-shot prompt to Google Gemini (`gemini-2.5-flash`), commanding it to find thematic links between the user's past reads and the new recommendation. It returns a single, personalized sentence starting with *"Because you liked..."*.
+- **How it works:** When a user clicks "Ask AI Why", the ML service receives the target book and the user's read history. 
+- **The Engine:** We execute a highly efficient pipeline:
+  ```text
+  Backend
+     ↓
+  Find similar books
+     ↓
+  Google Gemini
+     ↓
+  Write explanation
+  ```
+  We pass a zero-shot prompt to Google Gemini (`gemini-2.5-flash`), commanding it to find thematic links between the user's past reads and the new recommendation. It returns a single, personalized sentence starting with *"Because you liked..."*.
 
 ### Feature 4: Similar Books Sidebars (`/similar-books`)
-- **How it works:** Displayed on the `BookDetails` page. It does *not* encode text. Instead, it looks up the pre-calculated embedding of the selected book in `book_embeddings.npy`, and runs a FAISS nearest-neighbor search to find the closest matches.
+- **How it works:** Displayed on the `BookDetails` page. It does *not* encode text. Instead, it looks up the pre-calculated embedding of the selected book in `book_embeddings.npy`, and runs a FAISS nearest-neighbor search for `O(log n)` millisecond vector retrieval to find the closest matches.
 
 ---
 
-## 3. Frontend Architecture (File by File Documentation)
+## 5. Artifacts and Models
+
+The ML service relies on pre-trained serialized artifacts located in the `artifacts/` folder. This structure allows us to move from a heavy Training Notebook directly into a lightweight Backend.
+
+- `svd_model.pkl`: The trained Collaborative Filtering weights.
+- `books_meta.pkl`: The pandas DataFrame holding metadata (title, authors) for instant lookups.
+- `book_embeddings.npy`: The 384-dimensional dense vectors representing the themes of all 10,000 books.
+- `faiss.index`: The L2-normalized IndexFlatIP used for millisecond similarity searches.
+- `proxy_match.pkl`: A mapping structure that links generic users to pre-calculated collaborative clusters.
+
+---
+
+## 6. Frontend Architecture (File by File Documentation)
 
 ### `client/src/App.jsx`
 - **Purpose:** The root React router.
@@ -72,11 +138,11 @@ StoryNest is an AI-powered, hybrid recommendation engine built with React (Front
 
 ### `client/src/index.css`
 - **Purpose:** The global stylesheet.
-- **What it does:** Defines CSS variables for the color palette, glassmorphism shadows, and gradient accents. Contains the critical `@media (max-width: 768px)` queries that force flex layouts to stack vertically on mobile phones.
+- **What it does:** Defines CSS variables for the color palette, glassmorphism shadows, and gradient accents. Fully responsive layout using CSS Grid auto-fit, responsive breakpoints, and flexible layouts optimized for desktop, tablet, and mobile devices.
 
 ---
 
-## 4. API Gateway Architecture (Node.js)
+## 7. API Gateway Architecture (Node.js)
 
 ### `server/server.js`
 - **Purpose:** The middleman. The frontend talks to this, and this talks to MongoDB and the Python ML service.
@@ -88,7 +154,7 @@ StoryNest is an AI-powered, hybrid recommendation engine built with React (Front
 
 ---
 
-## 5. ML Service Architecture (Python/FastAPI)
+## 8. ML Service Architecture (Python/FastAPI)
 
 ### `ml-service/main.py`
 - **Purpose:** The mathematical brain of the operation.
