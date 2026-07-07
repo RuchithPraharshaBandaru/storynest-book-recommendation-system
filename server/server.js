@@ -367,10 +367,21 @@ async function wakeUpPython() {
   while (attempts < 20) {
     try {
       await axios.get(`${FASTAPI_URL}/ping`, { timeout: 10000 });
+      console.log(`[WAKEUP] Python is awake (attempt ${attempts + 1})`);
       return; // Awake!
     } catch (err) {
       attempts++;
-      if (attempts >= 20) throw new Error("ML service unavailable after 100s.");
+      console.log(`[WAKEUP] Attempt ${attempts}/20 failed:`);
+      console.log(`[WAKEUP]   err.code    = ${err.code}`);
+      console.log(`[WAKEUP]   err.message = ${err.message}`);
+      if (err.response) {
+        console.log(`[WAKEUP]   status      = ${err.response.status}`);
+        console.log(`[WAKEUP]   data        = ${JSON.stringify(err.response.data)}`);
+      }
+      if (attempts >= 20) {
+        console.error(`[WAKEUP] GAVE UP after 20 attempts. Last error: ${err.code} ${err.message}`);
+        throw err; // Throw the ORIGINAL error, not a generic one
+      }
       await new Promise(resolve => setTimeout(resolve, 5000));
     }
   }

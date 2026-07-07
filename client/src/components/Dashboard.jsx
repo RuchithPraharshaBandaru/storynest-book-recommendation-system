@@ -47,6 +47,16 @@ export default function Dashboard({ user, onLogout }) {
   // Feedback state (Feature 4)
   const [feedbackMap, setFeedbackMap] = useState({}); // { book_id: "helpful" | "not_interested" }
 
+  // Browser-side ML service wake-up ping.
+  // Render's free tier may not reliably wake a sleeping service from another free service.
+  // By pinging from the browser (external traffic), we guarantee the ML service wakes up.
+  useEffect(() => {
+    const ML_URL = import.meta.env.VITE_ML_URL;
+    if (ML_URL) {
+      fetch(`${ML_URL}/ping`, { mode: "no-cors" }).catch(() => {});
+    }
+  }, []);
+
   useEffect(() => {
     if (recommendations.length === 0) fetchRecommendations();
     if (popularBooks.length === 0) fetchPopularBooks();
