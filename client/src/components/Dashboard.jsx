@@ -534,76 +534,97 @@ export default function Dashboard({ user, onLogout }) {
           </div>
         )}
 
-        {/* Loading Skeletons */}
-        {loading ? (
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-            gap: 24,
-          }}>
-            {Array.from({ length: 10 }).map((_, i) => (
-              <div key={i} style={{ opacity: 0, animation: `fadeInUp 0.5s ${i * 0.05}s forwards` }}>
-                <div className="skeleton" style={{ height: 180, borderRadius: "16px 16px 0 0" }} />
-                <div style={{
-                  background: "var(--bg-card)",
-                  padding: 16,
-                  borderRadius: "0 0 16px 16px",
-                  border: "1px solid var(--border-glass)",
-                  borderTop: "none",
-                }}>
-                  <div className="skeleton" style={{ height: 16, width: "80%", marginBottom: 8, borderRadius: 6 }} />
-                  <div className="skeleton" style={{ height: 12, width: "50%", marginBottom: 16, borderRadius: 6 }} />
-                  <div className="skeleton" style={{ height: 36, borderRadius: 8 }} />
+        {/* Main Content Area */}
+        {/* RECOMMENDED TAB */}
+        {activeTab === "recommended" && (
+            <>
+              {loading ? (
+                <div style={{ textAlign: "center", padding: "40px 20px 60px" }}>
+                  <div className="animate-float" style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 56,
+                    height: 56,
+                    borderRadius: "50%",
+                    background: "var(--accent-gradient)",
+                    marginBottom: 20,
+                    boxShadow: "0 8px 32px var(--accent-glow)"
+                  }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>
+                  </div>
+                  <h3 style={{ fontSize: "1.3rem", fontWeight: 700, marginBottom: 8, color: "var(--text-primary)" }}>
+                    Waking ML Server & Generating Recommendations...
+                  </h3>
+                  <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem", maxWidth: 400, margin: "0 auto" }}>
+                    Please wait while our machine learning models analyze your reading history and calculate vector embeddings. This usually takes 15-30 seconds on a cold start.
+                  </p>
+                  
+                  {/* Skeletons below the message */}
+                  <div style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                    gap: 24,
+                    marginTop: 40,
+                    opacity: 0.5,
+                  }}>
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <div key={i}>
+                        <div className="skeleton" style={{ height: 180, borderRadius: "16px 16px 0 0" }} />
+                        <div style={{ background: "var(--bg-card)", padding: 16, borderRadius: "0 0 16px 16px", border: "1px solid var(--border-glass)", borderTop: "none" }}>
+                          <div className="skeleton" style={{ height: 16, width: "80%", marginBottom: 8, borderRadius: 6 }} />
+                          <div className="skeleton" style={{ height: 12, width: "50%", marginBottom: 16, borderRadius: 6 }} />
+                          <div className="skeleton" style={{ height: 36, borderRadius: 8 }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <>
-            {/* Recommendations Grid */}
-            {activeTab === "recommended" && (
-              <div style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-                gap: 24,
-              }}>
-                {recommendations.map((book, i) => (
-                  <div
-                    key={book.book_id}
-                    className="animate-fade-in-up"
-                    style={{ animationDelay: `${i * 0.05}s`, opacity: 0, animationFillMode: "forwards" }}
-                  >
-                    <BookCard
-                      book={book}
-                      showWhyButton
-                      showFeedback
-                      userReadHistory={readHistoryText}
-                      feedbackState={feedbackMap[book.book_id] || null}
-                      onFeedback={handleFeedback}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
+              ) : (
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                  gap: 24,
+                }}>
+                  {recommendations.map((book, i) => (
+                    <div
+                      key={book.book_id}
+                      className="animate-fade-in-up"
+                      style={{ animationDelay: `${i * 0.05}s`, opacity: 0, animationFillMode: "forwards" }}
+                    >
+                      <BookCard
+                        book={book}
+                        showWhyButton
+                        showFeedback
+                        userReadHistory={readHistoryText}
+                        feedbackState={feedbackMap[book.book_id] || null}
+                        onFeedback={handleFeedback}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
 
-            {/* Popular Books Grid */}
-            {activeTab === "popular" && (
-              <div style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-                gap: 24,
-              }}>
-                {popularBooks.map((book, i) => (
-                  <div
-                    key={book.book_id}
-                    className="animate-fade-in-up"
-                    style={{ animationDelay: `${(i % 10) * 0.05}s`, opacity: 0, animationFillMode: "forwards" }}
-                  >
-                    <BookCard book={book} />
-                  </div>
-                ))}
-              </div>
-            )}
+          {/* POPULAR TAB */}
+          {activeTab === "popular" && (
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+              gap: 24,
+            }}>
+              {popularBooks.map((book, i) => (
+                <div
+                  key={book.book_id}
+                  className="animate-fade-in-up"
+                  style={{ animationDelay: `${(i % 10) * 0.05}s`, opacity: 0, animationFillMode: "forwards" }}
+                >
+                  <BookCard book={book} />
+                </div>
+              ))}
+            </div>
+          )}
 
             {/* Empty state for Recommendations */}
             {activeTab === "recommended" && recommendations.length === 0 && !error && (
@@ -680,9 +701,6 @@ export default function Dashboard({ user, onLogout }) {
                 )}
               </div>
             )}
-
-          </>
-        )}
       </div>
 
       {/* My List Modal */}

@@ -133,17 +133,6 @@ Final Score = (
 
 ---
 
-## 8. AI Explanation Engine
-
-### Why an LLM is needed
-Mathematical vectors know *that* two books are similar, but they cannot explain *why* in human English.
-
-### The Pipeline
-When a user clicks "Ask AI Why", we execute a targeted pipeline:
-1. **Backend Similarity:** We run a localized FAISS search to find the 1 or 2 books from the user's read history that are most mathematically similar to the recommended book.
-2. **Prompt Engineering:** We inject *only* those 1-2 books into a zero-shot prompt. (Passing their entire 50-book history would confuse the LLM and waste tokens).
-3. **Gemini Generation:** We ask `gemini-2.5-flash` to find the thematic link. It returns a personalized sentence: *"Because you liked [Book A], you might enjoy this for its intense political intrigue."*
-
 ---
 
 ## 9. Backend Architecture
