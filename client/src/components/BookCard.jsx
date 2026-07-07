@@ -60,17 +60,22 @@ export default function BookCard({
   onAskWhy,
   style = {},
   userReadHistory = "",
+  showFeedback = false,
+  onFeedback,
+  feedbackState = null, // "helpful" | "not_interested" | null
 }) {
   const navigate = useNavigate();
   const [loadingWhy, setLoadingWhy] = useState(false);
   const [explanation, setExplanation] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [coverLoaded, setCoverLoaded] = useState(false);
+  const [showScores, setShowScores] = useState(false);
+  const [isHoveringImage, setIsHoveringImage] = useState(false);
+  const [localFeedback, setLocalFeedback] = useState(feedbackState);
+  const [coverUrl, setCoverUrl] = useState(book.cover_image_url || null);
 
   const [c1, c2] = getGradient(book.book_id);
   const initials = getInitials(book.title);
-
-  const coverUrl = book.cover_image_url || null;
 
   async function handleAskWhy() {
     setShowModal(true);
@@ -108,6 +113,9 @@ export default function BookCard({
           boxShadow: selected
             ? "0 0 24px var(--accent-glow), 0 8px 32px rgba(0,0,0,0.3)"
             : "0 4px 20px rgba(0,0,0,0.2)",
+          display: "flex",
+          flexDirection: "column",
+          height: "100%",
         }}
       >
         {/* Selected check badge */}
@@ -136,6 +144,8 @@ export default function BookCard({
 
         {/* Book Cover */}
         <div
+          onMouseEnter={() => setIsHoveringImage(true)}
+          onMouseLeave={() => setIsHoveringImage(false)}
           style={{
             height: 220,
             background: `linear-gradient(135deg, ${c1}, ${c2})`,
@@ -211,10 +221,85 @@ export default function BookCard({
               </div>
             </>
           )}
+
+          {/* Hover Feedback (Feature 4) */}
+          {showFeedback && (
+            <div style={{
+              position: "absolute",
+              inset: 0,
+              background: "rgba(0,0,0,0.5)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 16,
+              opacity: isHoveringImage ? 1 : 0,
+              transition: "opacity 0.2s ease",
+              zIndex: 10,
+            }}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const newFeedback = localFeedback === "helpful" ? null : "helpful";
+                  setLocalFeedback(newFeedback);
+                  onFeedback?.(book.book_id, newFeedback || "helpful");
+                }}
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: "50%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: localFeedback === "helpful" ? "#22c55e" : "rgba(255,255,255,0.1)",
+                  border: `2px solid ${localFeedback === "helpful" ? "#22c55e" : "rgba(255,255,255,0.5)"}`,
+                  color: "white",
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                }}
+                title="I like books like this"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill={localFeedback === "helpful" ? "white" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
+                </svg>
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const newFeedback = localFeedback === "not_interested" ? null : "not_interested";
+                  setLocalFeedback(newFeedback);
+                  onFeedback?.(book.book_id, newFeedback || "not_interested");
+                }}
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: "50%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: localFeedback === "not_interested" ? "#ef4444" : "rgba(255,255,255,0.1)",
+                  border: `2px solid ${localFeedback === "not_interested" ? "#ef4444" : "rgba(255,255,255,0.5)"}`,
+                  color: "white",
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                }}
+                title="Not interested in this"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill={localFeedback === "not_interested" ? "white" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"></path>
+                </svg>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Book Info */}
-        <div style={{ padding: "16px 16px 20px" }}>
+        <div style={{ 
+          padding: "16px 16px 20px", 
+          position: "relative",
+          display: "flex",
+          flexDirection: "column",
+          flex: 1
+        }}>
           <h3
             style={{
               fontSize: "0.9rem",
@@ -243,6 +328,9 @@ export default function BookCard({
             {book.authors}
           </p>
 
+          {/* Buttons Container aligned to bottom */}
+          <div style={{ marginTop: "auto", display: "flex", flexDirection: "column" }}>
+
           {/* "Ask AI Why" button for dashboard mode */}
           {showWhyButton && (
             <button
@@ -269,6 +357,8 @@ export default function BookCard({
               Ask AI Why
             </button>
           )}
+
+
 
           {/* View Details Button */}
           <button
@@ -299,6 +389,117 @@ export default function BookCard({
             </svg>
             View Details
           </button>
+
+          {/* Score Transparency (Feature 10) */}
+          {book.scores && Object.keys(book.scores).length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowScores(!showScores);
+                }}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 4,
+                  fontSize: "0.72rem",
+                  background: "none",
+                  border: "none",
+                  color: "var(--text-muted)",
+                  cursor: "pointer",
+                  padding: "4px 0",
+                  transition: "color 0.2s",
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 20V10"></path>
+                  <path d="M18 20V4"></path>
+                  <path d="M6 20v-4"></path>
+                </svg>
+                {showScores ? "Hide" : "Show"} Scores
+              </button>
+
+              {showScores && (
+                <div style={{
+                  position: "absolute",
+                  bottom: 0,
+                  left: 0,
+                  width: "100%",
+                  height: "100%",
+                  padding: "16px",
+                  background: "var(--bg-card)",
+                  backdropFilter: "blur(8px)",
+                  zIndex: 20,
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "flex-end",
+                  animation: "fadeInUp 0.2s ease",
+                  borderTop: "1px solid var(--border-glass)",
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+                    <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--text-primary)" }}>Score Breakdown</span>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); setShowScores(false); }} 
+                      style={{ background:"none", border:"none", color:"var(--text-muted)", cursor:"pointer" }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"></path></svg>
+                    </button>
+                  </div>
+                  {Object.entries(book.scores)
+                    .filter(([key]) => key !== "feedback")
+                    .map(([key, value]) => {
+                    const colors = {
+                      content: "#3b82f6",
+                      collaborative: "#8b5cf6",
+                      favourite: "#f59e0b",
+                      rating: "#22c55e",
+                      feedback: "#ec4899",
+                      final: "var(--accent-primary)",
+                    };
+                    const isFinal = key === "final";
+                    return (
+                      <div key={key} style={{
+                        marginBottom: isFinal ? 0 : 6,
+                        ...(isFinal ? {
+                          padding: "8px",
+                          marginTop: "8px",
+                          border: "1px solid var(--accent-primary)",
+                          borderRadius: "6px",
+                          background: "rgba(0,0,0,0.15)",
+                          boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                        } : {})
+                      }}>
+                        <div style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          fontSize: isFinal ? "0.75rem" : "0.7rem",
+                          color: isFinal ? "var(--accent-primary)" : "var(--text-muted)",
+                          marginBottom: 4,
+                          fontWeight: isFinal ? 700 : 400
+                        }}>
+                          <span style={{ textTransform: "capitalize" }}>{key} {isFinal ? "Match" : ""}</span>
+                          <span style={{ fontWeight: 600 }}>{(value * 100).toFixed(0)}%</span>
+                        </div>
+                        <div style={{ height: isFinal ? 6 : 4, background: "rgba(0,0,0,0.06)", borderRadius: 3, overflow: "hidden" }}>
+                          <div style={{
+                            height: "100%",
+                            width: `${Math.max(0, Math.min(100, value * 100))}%`,
+                            background: colors[key] || "var(--accent-primary)",
+                            borderRadius: 3,
+                            transition: "width 0.4s ease",
+                          }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          </div> {/* End Buttons Container */}
         </div>
       </div>
 

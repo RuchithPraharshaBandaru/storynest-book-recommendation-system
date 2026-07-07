@@ -36,12 +36,23 @@ export default function Dashboard({ user, onLogout }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
+  const [searchMode, setSearchMode] = useState("title"); // "title" | "semantic" | "ai"
+
+  // Recommendation pool for instant refresh (Feature 9)
+  const [recPool, setRecPool] = useState(() => {
+    const cached = sessionStorage.getItem("dashboard_recPool");
+    return cached ? JSON.parse(cached) : [];
+  });
+
+  // Feedback state (Feature 4)
+  const [feedbackMap, setFeedbackMap] = useState({}); // { book_id: "helpful" | "not_interested" }
 
   useEffect(() => {
     if (recommendations.length === 0) fetchRecommendations();
     if (popularBooks.length === 0) fetchPopularBooks();
     if (randomBooks.length === 0) fetchRandomBooks();
     fetchLikedBooks();
+    fetchFeedback();
   }, []);
 
   // Save active tab
@@ -84,7 +95,17 @@ export default function Dashboard({ user, onLogout }) {
   async function searchBooks(query) {
     setSearching(true);
     try {
-      const res = await api.get(`/books/search?q=${encodeURIComponent(query)}`);
+      let res;
+      if (searchMode === "semantic") {
+        res = await api.get(`/books/semantic-search?q=${encodeURIComponent(query)}`);
+      } else if (searchMode === "ai") {
+        res = await api.post("/books/ai-search", { query });
+        // AI search returns results in data directly
+        setSearchResults(res.data);
+        return;
+      } else {
+        res = await api.get(`/books/search?q=${encodeURIComponent(query)}`);
+      }
       setSearchResults(res.data);
     } catch (err) {
       console.error("Search error", err);
@@ -108,10 +129,11 @@ export default function Dashboard({ user, onLogout }) {
 
   async function fetchLikedBooks() {
     try {
-      const res = await api.get("/user/liked");
-      setLikedBooks(res.data);
+      const res = await api.get("/user/interactions");
+      // Filter out any interactions where the book was deleted from DB
+      setLikedBooks(res.data.filter(item => item.book));
     } catch (err) {
-      console.error("Fetch liked error", err);
+      console.error("Fetch list error", err);
     }
   }
 
@@ -141,8 +163,12 @@ export default function Dashboard({ user, onLogout }) {
   async function fetchRecommendations() {
     try {
       const res = await api.get("/user/dashboard");
-      setRecommendations(res.data.recommendations);
-      sessionStorage.setItem("dashboard_recommendations", JSON.stringify(res.data.recommendations));
+      const recs = res.data.recommendations;
+      setRecommendations(recs);
+      sessionStorage.setItem("dashboard_recommendations", JSON.stringify(recs));
+      // Also store as pool for instant refresh
+      setRecPool(recs);
+      sessionStorage.setItem("dashboard_recPool", JSON.stringify(recs));
       setUserInfo(res.data.user);
     } catch (err) {
       setError("Failed to load recommendations. Please try again.");
@@ -151,11 +177,47 @@ export default function Dashboard({ user, onLogout }) {
     }
   }
 
+  function refreshFromPool() {
+    if (recPool.length <= 10) {
+      // Pool too small, fetch fresh from server
+      setLoading(true);
+      fetchRecommendations();
+      return;
+    }
+    // Randomly sample 10 from the pool
+    const shuffled = [...recPool].sort(() => Math.random() - 0.5);
+    const sample = shuffled.slice(0, 10);
+    setRecommendations(sample);
+    sessionStorage.setItem("dashboard_recommendations", JSON.stringify(sample));
+  }
+
+  async function fetchFeedback() {
+    try {
+      const res = await api.get("/user/feedback");
+      const map = {};
+      for (const fb of res.data) {
+        map[fb.book_id] = fb.type;
+      }
+      setFeedbackMap(map);
+    } catch (err) {
+      console.error("Fetch feedback error", err);
+    }
+  }
+
+  async function handleFeedback(bookId, type) {
+    try {
+      await api.post("/user/feedback", { book_id: bookId, type });
+      setFeedbackMap(prev => ({ ...prev, [bookId]: type }));
+    } catch (err) {
+      console.error("Feedback error", err);
+    }
+  }
+
   // Build a readable read-history string for the AI prompt.
   // We pass the full list to the backend, and the AI will selectively pick
   // the 1 or 2 most relevant books for each specific recommendation.
   const readHistoryText = likedBooks.length > 0
-    ? likedBooks.map(b => b.title).join(", ")
+    ? likedBooks.map(b => b.book.title).join(", ")
     : "books from their reading history";
 
   return (
@@ -230,26 +292,49 @@ export default function Dashboard({ user, onLogout }) {
           </div>
 
           {/* Search in Navbar */}
-          <div style={{ position: "relative", flex: 1, maxWidth: 400 }}>
-            <input
-              type="text"
-              placeholder=" Search for a book to like..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "10px 16px",
-                borderRadius: 12,
-                border: "1px solid var(--border-glass)",
-                background: "rgba(0,0,0,0.03)",
-                color: "var(--text-primary)",
-                fontSize: "0.9rem",
-                outline: "none",
-                transition: "all 0.3s",
-              }}
-              onFocus={(e) => e.target.style.borderColor = "var(--accent-primary)"}
-              onBlur={(e) => e.target.style.borderColor = "var(--border-glass)"}
-            />
+          <div style={{ position: "relative", flex: 1, maxWidth: 500 }}>
+            <div style={{ display: "flex", gap: 0, marginBottom: 0 }}>
+              {/* Search mode toggle dropdown */}
+              <select
+                value={searchMode}
+                onChange={(e) => { setSearchMode(e.target.value); setSearchResults([]); }}
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: "12px 0 0 12px",
+                  border: "1px solid var(--border-glass)",
+                  borderRight: "none",
+                  background: "rgba(0,0,0,0.03)",
+                  color: "var(--text-primary)",
+                  fontSize: "0.85rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  outline: "none",
+                }}
+              >
+                <option value="title">Keyword Search</option>
+                <option value="semantic">Semantic Search</option>
+                <option value="ai">AI Search</option>
+              </select>
+              <input
+                type="text"
+                placeholder={searchMode === "title" ? "Search by title or author..." : searchMode === "semantic" ? "Describe what you're looking for..." : "Ask AI for book recommendations..."}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "10px 16px",
+                  borderRadius: "0 12px 12px 0",
+                  border: "1px solid var(--border-glass)",
+                  background: "rgba(0,0,0,0.03)",
+                  color: "var(--text-primary)",
+                  fontSize: "0.9rem",
+                  outline: "none",
+                  transition: "all 0.3s",
+                }}
+                onFocus={(e) => e.target.style.borderColor = "var(--accent-primary)"}
+                onBlur={(e) => e.target.style.borderColor = "var(--border-glass)"}
+              />
+            </div>
             {searching && (
               <div style={{ position: "absolute", right: 16, top: 10, color: "var(--text-muted)", fontSize: "0.8rem" }}>
                 ...
@@ -293,7 +378,7 @@ export default function Dashboard({ user, onLogout }) {
                     </div>
                     {likedBooks.some(b => b.book_id === book.book_id) ? (
                       <span style={{ fontSize: "0.75rem", color: "var(--success)", padding: "6px 12px", fontWeight: 600 }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ display: "inline-block", marginRight: 4, verticalAlign: "text-bottom" }}><polyline points="20 6 9 17 4 12"></polyline></svg>Liked
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ display: "inline-block", marginRight: 4, verticalAlign: "text-bottom" }}><polyline points="20 6 9 17 4 12"></polyline></svg>In Your List
                       </span>
                     ) : (
                       <button
@@ -308,7 +393,7 @@ export default function Dashboard({ user, onLogout }) {
                         className="btn-primary"
                         style={{ padding: "6px 12px", fontSize: "0.75rem", borderRadius: 8, flexShrink: 0 }}
                       >
-                        Like
+                        Add to List
                       </button>
                     )}
                   </div>
@@ -335,7 +420,7 @@ export default function Dashboard({ user, onLogout }) {
               transition: "all 0.2s",
               fontSize: "1.2rem",
             }}
-            title="View Liked Books"
+            title="View My List"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
           </button>
@@ -375,10 +460,7 @@ export default function Dashboard({ user, onLogout }) {
 
           {activeTab === "recommended" && (
             <button
-              onClick={() => {
-                setLoading(true);
-                fetchRecommendations();
-              }}
+              onClick={refreshFromPool}
               style={{
                 background: "rgba(0,0,0,0.06)",
                 border: "1px solid var(--border-glass)",
@@ -392,7 +474,7 @@ export default function Dashboard({ user, onLogout }) {
                 color: "var(--text-primary)",
                 transition: "all 0.2s",
               }}
-              title="Refresh Recommendations"
+              title="Refresh Recommendations (instant from pool)"
               onMouseOver={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
               onMouseOut={(e) => e.currentTarget.style.background = "rgba(0,0,0,0.06)"}
             >
@@ -474,7 +556,10 @@ export default function Dashboard({ user, onLogout }) {
                     <BookCard
                       book={book}
                       showWhyButton
+                      showFeedback
                       userReadHistory={readHistoryText}
+                      feedbackState={feedbackMap[book.book_id] || null}
+                      onFeedback={handleFeedback}
                     />
                   </div>
                 ))}
@@ -580,7 +665,7 @@ export default function Dashboard({ user, onLogout }) {
         )}
       </div>
 
-      {/* Liked Books Modal */}
+      {/* My List Modal */}
       {showLikedModal && (
         <div style={{
           position: "fixed",
@@ -624,24 +709,81 @@ export default function Dashboard({ user, onLogout }) {
               ✕
             </button>
             <h2 style={{ fontSize: "2rem", fontWeight: 700, marginBottom: 32, display: "flex", alignItems: "center", gap: 12 }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="var(--accent-primary)" stroke="none" style={{ display: "inline-block", marginRight: 12, verticalAlign: "middle" }}><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg> Your Liked Books
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ display: "inline-block", marginRight: 12, verticalAlign: "middle" }}><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg> My List
             </h2>
-            {likedBooks.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "60px 20px" }}>
-                <div style={{ color: "var(--accent-primary)", display: "flex", justifyContent: "center", marginBottom: 16 }}><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg></div>
-                <p style={{ color: "var(--text-secondary)", fontSize: "1.1rem" }}>You haven't liked any books yet! Search and add some from your dashboard.</p>
-              </div>
-            ) : (
-              <div style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(5, 1fr)",
-                gap: 24,
-              }}>
-                {likedBooks.map((book) => (
-                  <BookCard key={book.book_id} book={book} />
-                ))}
-              </div>
-            )}
+            {(() => {
+              if (likedBooks.length === 0) {
+                return (
+                  <div style={{ textAlign: "center", padding: "60px 20px" }}>
+                    <div style={{ color: "var(--accent-primary)", display: "flex", justifyContent: "center", marginBottom: 16 }}><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg></div>
+                    <p style={{ color: "var(--text-secondary)", fontSize: "1.1rem" }}>You haven't added any books yet! Search and add some from your dashboard.</p>
+                  </div>
+                );
+              }
+
+              // Categorize books
+              const grouped = {
+                reading: likedBooks.filter(i => i.status === "reading"),
+                want: likedBooks.filter(i => i.status === "want_to_read"),
+                finished: likedBooks.filter(i => i.status === "finished"),
+                dropped: likedBooks.filter(i => i.status === "dropped"),
+                favourite: likedBooks.filter(i => i.favourite),
+                other: likedBooks.filter(i => !i.status && !i.favourite)
+              };
+
+              const titles = {
+                reading: "Currently Reading",
+                want: "Want to Read",
+                finished: "Finished",
+                dropped: "Dropped",
+                favourite: "Favourites",
+                other: "Added"
+              };
+
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: 40 }}>
+                  {Object.entries(grouped).map(([key, items]) => {
+                    if (items.length === 0) return null;
+                    return (
+                      <div key={key}>
+                        <h3 style={{ 
+                          fontSize: "1.4rem", 
+                          fontWeight: 600, 
+                          color: "var(--text-primary)", 
+                          marginBottom: 20,
+                          paddingBottom: 8,
+                          borderBottom: "1px solid var(--border-glass)"
+                        }}>
+                          {titles[key]} <span style={{ color: "var(--text-muted)", fontSize: "0.9rem", fontWeight: "normal", marginLeft: 8 }}>({items.length})</span>
+                        </h3>
+                        <div style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(5, 1fr)",
+                          gap: 24,
+                        }}>
+                          {items.map((item) => (
+                            <div key={item.book_id}>
+                              <BookCard book={item.book} />
+                              {item.rating && (
+                                <div style={{ 
+                                  marginTop: 12, 
+                                  fontSize: "1.1rem", 
+                                  color: "#f59e0b", 
+                                  textAlign: "center",
+                                  letterSpacing: 2
+                                }}>
+                                  {"★".repeat(item.rating)}{"☆".repeat(5 - item.rating)}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

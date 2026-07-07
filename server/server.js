@@ -34,6 +34,18 @@ app.use(express.json());
 // Mongoose Models
 // ---------------------------------------------------------------------------
 
+const interactionSchema = new mongoose.Schema({
+  book_id: { type: Number, required: true },
+  rating: { type: Number, min: 1, max: 5, default: null },
+  favourite: { type: Boolean, default: false },
+  status: {
+    type: String,
+    enum: ["want_to_read", "currently_reading", "finished", "dropped"],
+    default: "finished",
+  },
+  liked_at: { type: Date, default: Date.now },
+});
+
 const userSchema = new mongoose.Schema(
   {
     username: { type: String, required: true, unique: true, trim: true },
@@ -41,6 +53,7 @@ const userSchema = new mongoose.Schema(
     password_hash: { type: String, required: true },
     proxy_svd_id: { type: Number, default: null },
     read_history: { type: [Number], default: [] },
+    interactions: { type: [interactionSchema], default: [] },
     onboarded: { type: Boolean, default: false },
   },
   { timestamps: true }
@@ -56,8 +69,17 @@ const bookSchema = new mongoose.Schema({
   description: { type: String, default: "" },
 });
 
+const feedbackSchema = new mongoose.Schema({
+  user_id: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  book_id: { type: Number, required: true },
+  type: { type: String, enum: ["helpful", "not_interested"], required: true },
+  created_at: { type: Date, default: Date.now },
+});
+feedbackSchema.index({ user_id: 1, book_id: 1 }, { unique: true });
+
 const User = mongoose.model("User", userSchema);
 const Book = mongoose.model("Book", bookSchema);
+const Feedback = mongoose.model("Feedback", feedbackSchema);
 
 // ---------------------------------------------------------------------------
 // Auth Middleware
@@ -213,6 +235,60 @@ app.get("/books/onboarding", async (req, res) => {
   }
 });
 
+// GET /books/semantic-search
+app.get("/books/semantic-search", async (req, res) => {
+  try {
+    const q = req.query.q;
+    if (!q) return res.json([]);
+    await wakeUpPython();
+    const mlRes = await axios.post(`${FASTAPI_URL}/semantic-search`, { query: q });
+    const bookIds = (mlRes.data.results || []).map(r => r.book_id);
+    const books = await Book.find({ book_id: { $in: bookIds } });
+    const orderedBooks = bookIds.map(id => books.find(b => b.book_id === id)).filter(Boolean);
+    res.json(orderedBooks);
+  } catch (err) {
+    console.error("Semantic search error:", err.message);
+    res.status(502).json({ error: "Search failed" });
+  }
+});
+
+// POST /books/ai-search
+app.post("/books/ai-search", async (req, res) => {
+  try {
+    const { query } = req.body;
+    if (!query) return res.status(400).json({ error: "query required" });
+    await wakeUpPython();
+    const mlRes = await axios.post(`${FASTAPI_URL}/ai-search`, { 
+      query,
+      user_read_history: []
+    });
+    const bookIds = (mlRes.data.results || []).map(r => r.book_id);
+    const books = await Book.find({ book_id: { $in: bookIds } });
+    const orderedBooks = bookIds.map(id => books.find(b => b.book_id === id)).filter(Boolean);
+    res.json(orderedBooks);
+  } catch (err) {
+    console.error("AI search error:", err.message);
+    res.status(502).json({ error: "AI search failed" });
+  }
+});
+
+// GET /books/:id/similar
+app.get("/books/:id/similar", async (req, res) => {
+  try {
+    const book_id = parseInt(req.params.id, 10);
+    if (isNaN(book_id)) return res.status(400).json({ error: "Invalid book_id" });
+    await wakeUpPython();
+    const mlRes = await axios.post(`${FASTAPI_URL}/similar-books`, { book_id });
+    const bookIds = (mlRes.data.similar_books || []).map(r => r.book_id);
+    const books = await Book.find({ book_id: { $in: bookIds } });
+    const orderedBooks = bookIds.map(id => books.find(b => b.book_id === id)).filter(Boolean);
+    res.json(orderedBooks);
+  } catch (err) {
+    console.error("Similar books error:", err.message);
+    res.status(502).json({ error: "Failed to fetch similar books" });
+  }
+});
+
 // GET /books/:id
 app.get("/books/:id", async (req, res) => {
   try {
@@ -338,6 +414,16 @@ app.post("/user/like", authMiddleware, async (req, res) => {
 
     user.read_history.push(book_id);
 
+    // Add interaction entry if it doesn't exist
+    const existingInteraction = user.interactions.find(i => i.book_id === book_id);
+    if (!existingInteraction) {
+      user.interactions.push({
+        book_id,
+        status: "finished",
+        liked_at: new Date(),
+      });
+    }
+
     // Re-calculate proxy_svd_id
     try {
       await wakeUpPython();
@@ -384,11 +470,19 @@ app.post("/user/onboard", authMiddleware, async (req, res) => {
       proxy_svd_id = 314;
     }
 
+    // Build interaction entries for the 3 onboarding books
+    const interactions = book_ids.map(bid => ({
+      book_id: bid,
+      status: "finished",
+      liked_at: new Date(),
+    }));
+
     // Update user
     const user = await User.findByIdAndUpdate(
       req.userId,
       {
         read_history: book_ids,
+        interactions,
         proxy_svd_id,
         onboarded: true,
       },
@@ -425,6 +519,21 @@ app.get("/user/dashboard", authMiddleware, async (req, res) => {
       return res.status(400).json({ error: "User has not completed onboarding" });
     }
 
+    // Build rich interaction data for the ML service
+    const ratings = {};
+    const favourites = [];
+    const statuses = {};
+    for (const inter of user.interactions) {
+      if (inter.rating) ratings[inter.book_id] = inter.rating;
+      if (inter.favourite) favourites.push(inter.book_id);
+      if (inter.status) statuses[inter.book_id] = inter.status;
+    }
+
+    // Get user's feedback
+    const feedbackDocs = await Feedback.find({ user_id: req.userId });
+    const feedback_helpful = feedbackDocs.filter(f => f.type === "helpful").map(f => f.book_id);
+    const feedback_not_interested = feedbackDocs.filter(f => f.type === "not_interested").map(f => f.book_id);
+
     // Call FastAPI /recommend
     try {
       await wakeUpPython();
@@ -432,6 +541,11 @@ app.get("/user/dashboard", authMiddleware, async (req, res) => {
       const mlRes = await axios.post(`${FASTAPI_URL}/recommend`, {
         proxy_svd_id: user.proxy_svd_id,
         recent_liked_book_ids: user.read_history,
+        ratings,
+        favourites,
+        statuses,
+        feedback_helpful,
+        feedback_not_interested,
       });
 
       const mlRecommendations = mlRes.data.recommendations;
@@ -440,7 +554,7 @@ app.get("/user/dashboard", authMiddleware, async (req, res) => {
       const bookIds = mlRecommendations.map(r => r.book_id);
       const dbBooks = await Book.find({ book_id: { $in: bookIds } });
       
-      // Merge ML content with DB fields (so we keep the 'content' field for explanations, but add cover_image_url)
+      // Merge ML content with DB fields
       const enrichedRecommendations = mlRecommendations.map(mlBook => {
         const dbBook = dbBooks.find(b => b.book_id === mlBook.book_id);
         return {
@@ -502,8 +616,220 @@ app.get("/user/me", authMiddleware, async (req, res) => {
   }
 });
 
+// GET /user/interactions — get all interactions with full book data
+app.get("/user/interactions", authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const bookIds = user.interactions.map(i => i.book_id);
+    const books = await Book.find({ book_id: { $in: bookIds } });
+
+    const enriched = user.interactions.map(inter => {
+      const book = books.find(b => b.book_id === inter.book_id);
+      return {
+        book_id: inter.book_id,
+        rating: inter.rating,
+        favourite: inter.favourite,
+        status: inter.status,
+        liked_at: inter.liked_at,
+        book: book || null,
+      };
+    });
+
+    res.json(enriched);
+  } catch (err) {
+    console.error("Fetch interactions error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// PUT /user/interaction/:book_id — update rating, favourite, or status
+app.put("/user/interaction/:book_id", authMiddleware, async (req, res) => {
+  try {
+    const book_id = parseInt(req.params.book_id, 10);
+    const { rating, favourite, status } = req.body;
+
+    const user = await User.findById(req.userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    let interaction = user.interactions.find(i => i.book_id === book_id);
+
+    if (!interaction) {
+      // Create new interaction if it doesn't exist
+      user.interactions.push({
+        book_id,
+        rating: rating || null,
+        favourite: favourite || false,
+        status: status || "finished",
+        liked_at: new Date(),
+      });
+      // Also add to read_history if not present
+      if (!user.read_history.includes(book_id)) {
+        user.read_history.push(book_id);
+      }
+    } else {
+      // Update existing fields
+      if (rating !== undefined) interaction.rating = rating;
+      if (favourite !== undefined) interaction.favourite = favourite;
+      if (status !== undefined) interaction.status = status;
+    }
+
+    await user.save();
+    const updated = user.interactions.find(i => i.book_id === book_id);
+    res.json({ message: "Interaction updated", interaction: updated });
+  } catch (err) {
+    console.error("Update interaction error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// POST /user/feedback — save recommendation feedback (helpful / not_interested)
+app.post("/user/feedback", authMiddleware, async (req, res) => {
+  try {
+    const { book_id, type } = req.body;
+    if (!book_id || !type) return res.status(400).json({ error: "book_id and type required" });
+    if (!["helpful", "not_interested"].includes(type)) {
+      return res.status(400).json({ error: 'type must be "helpful" or "not_interested"' });
+    }
+
+    // Upsert: if feedback already exists for this user+book, update it
+    const feedback = await Feedback.findOneAndUpdate(
+      { user_id: req.userId, book_id },
+      { type, created_at: new Date() },
+      { upsert: true, new: true }
+    );
+
+    res.json({ message: "Feedback saved", feedback });
+  } catch (err) {
+    console.error("Feedback error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// GET /user/feedback — get all feedback for current user
+app.get("/user/feedback", authMiddleware, async (req, res) => {
+  try {
+    const feedback = await Feedback.find({ user_id: req.userId });
+    res.json(feedback);
+  } catch (err) {
+    console.error("Fetch feedback error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // ---------------------------------------------------------------------------
-// Book Routes
+// Book Routes (ML-powered)
+// ---------------------------------------------------------------------------
+
+// GET /books/semantic-search — FAISS-powered semantic search
+app.get("/books/semantic-search", authMiddleware, async (req, res) => {
+  try {
+    const q = req.query.q;
+    if (!q) return res.json([]);
+
+    await wakeUpPython();
+    console.log(`[ML-CALL] Semantic search: "${q}"`);
+    const mlRes = await axios.post(`${FASTAPI_URL}/semantic-search`, {
+      query: q,
+      top_k: 10,
+    });
+
+    // Enrich with MongoDB data (covers, ratings)
+    const bookIds = mlRes.data.results.map(r => r.book_id);
+    const dbBooks = await Book.find({ book_id: { $in: bookIds } });
+
+    const enriched = mlRes.data.results.map(result => {
+      const dbBook = dbBooks.find(b => b.book_id === result.book_id);
+      return {
+        ...result,
+        cover_image_url: dbBook ? dbBook.cover_image_url : "",
+        average_rating: dbBook ? dbBook.average_rating : 0,
+        ratings_count: dbBook ? dbBook.ratings_count : 0,
+        description: dbBook ? dbBook.description : "",
+      };
+    });
+
+    res.json(enriched);
+  } catch (err) {
+    console.error("Semantic search error:", err.message);
+    res.status(502).json({ error: "Semantic search unavailable" });
+  }
+});
+
+// GET /books/:id/similar — FAISS-powered similar books
+app.get("/books/:id/similar", async (req, res) => {
+  try {
+    const book_id = parseInt(req.params.id, 10);
+    if (isNaN(book_id)) return res.status(400).json({ error: "Invalid book_id" });
+
+    await wakeUpPython();
+    console.log(`[ML-CALL] Similar books for book_id=${book_id}`);
+    const mlRes = await axios.post(`${FASTAPI_URL}/similar-books`, {
+      book_id,
+      top_k: 6,
+    });
+
+    // Enrich with MongoDB data
+    const bookIds = mlRes.data.similar_books.map(r => r.book_id);
+    const dbBooks = await Book.find({ book_id: { $in: bookIds } });
+
+    const enriched = mlRes.data.similar_books.map(result => {
+      const dbBook = dbBooks.find(b => b.book_id === result.book_id);
+      return {
+        ...result,
+        cover_image_url: dbBook ? dbBook.cover_image_url : "",
+        average_rating: dbBook ? dbBook.average_rating : 0,
+        ratings_count: dbBook ? dbBook.ratings_count : 0,
+      };
+    });
+
+    res.json(enriched);
+  } catch (err) {
+    console.error("Similar books error:", err.message);
+    res.status(502).json({ error: "Similar books unavailable" });
+  }
+});
+
+// POST /books/ai-search — Gemini-powered conversational search
+app.post("/books/ai-search", authMiddleware, async (req, res) => {
+  try {
+    const { query } = req.body;
+    if (!query) return res.status(400).json({ error: "query required" });
+
+    const user = await User.findById(req.userId);
+    const user_liked_book_ids = user ? user.read_history : [];
+
+    await wakeUpPython();
+    console.log(`[ML-CALL] AI search: "${query}"`);
+    const mlRes = await axios.post(`${FASTAPI_URL}/ai-search`, {
+      query,
+      user_liked_book_ids,
+    });
+
+    // Enrich with MongoDB data
+    const bookIds = mlRes.data.results.map(r => r.book_id);
+    const dbBooks = await Book.find({ book_id: { $in: bookIds } });
+
+    const enriched = mlRes.data.results.map(result => {
+      const dbBook = dbBooks.find(b => b.book_id === result.book_id);
+      return {
+        ...result,
+        cover_image_url: dbBook ? dbBook.cover_image_url : "",
+        average_rating: dbBook ? dbBook.average_rating : 0,
+        ratings_count: dbBook ? dbBook.ratings_count : 0,
+      };
+    });
+
+    res.json(enriched);
+  } catch (err) {
+    console.error("AI search error:", err.message);
+    res.status(502).json({ error: "AI search unavailable" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Legacy Book Routes
 // ---------------------------------------------------------------------------
 
 
