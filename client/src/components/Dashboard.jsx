@@ -53,7 +53,17 @@ export default function Dashboard({ user, onLogout }) {
   useEffect(() => {
     const ML_URL = import.meta.env.VITE_ML_URL;
     if (ML_URL) {
-      fetch(`${ML_URL}/ping`, { mode: "no-cors" }).catch(() => {});
+      console.log(`[WAKEUP] Sending browser ping to ${ML_URL}/ping`);
+      fetch(`${ML_URL}/ping`)
+        .then(res => {
+          console.log(`[WAKEUP] Browser ping responded with status: ${res.status}`);
+          if (!res.ok) {
+            console.warn(`[WAKEUP] Browser ping failed with status ${res.status}`);
+          }
+        })
+        .catch(err => {
+          console.error(`[WAKEUP] Browser ping network error:`, err);
+        });
     }
   }, []);
 
