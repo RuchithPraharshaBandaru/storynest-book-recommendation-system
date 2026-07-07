@@ -37,13 +37,13 @@ The result is a recommendation engine that evolves with every interaction.
 
 ---
 
-# 📚 Documentation
+#  Documentation
 
 This README provides an overview of the project.
 
 For a complete technical breakdown, see:
 
-- 🧠 **[Machine Learning Explained](./docs/ML_EXPLAINED.md)**
+-  **[Machine Learning Explained](./docs/ML_EXPLAINED.md)**
   - Vector Embeddings
   - Transformers
   - FastEmbed
@@ -52,7 +52,7 @@ For a complete technical breakdown, see:
   - Hybrid Recommendation Formula
   - Recommendation Pipeline
 
-- 🏗 **[Project Architecture](./PROJECT_DOCUMENTATION.md)**
+-  **[Project Architecture](./PROJECT_DOCUMENTATION.md)**
   - Backend Architecture
   - Database Design
   - API Gateway
@@ -63,9 +63,9 @@ For a complete technical breakdown, see:
 
 ---
 
-# ✨ Features
+#  Features
 
-## 🤖 AI Recommendation Engine
+##  AI Recommendation Engine
 
 - Hybrid Recommendation Engine combining multiple recommendation signals
 - Collaborative Filtering using Singular Value Decomposition (SVD)
@@ -80,7 +80,7 @@ For a complete technical breakdown, see:
 
 ---
 
-## 🔍 Search
+##  Search
 
 ### Keyword Search
 
@@ -110,7 +110,7 @@ Google Gemini extracts the semantic intent from the request before performing se
 
 ---
 
-## 📖 Personalized Experience
+##  Personalized Experience
 
 - Reading History
 - Favorites
@@ -124,7 +124,7 @@ Google Gemini extracts the semantic intent from the request before performing se
 
 ---
 
-## 🧠 AI Explanations
+##  AI Explanations
 
 Every recommendation includes an optional **Ask AI Why** feature.
 
@@ -134,7 +134,7 @@ Those books, together with the recommended book, are passed to **Google Gemini**
 
 ---
 
-## ⚡ Performance Optimizations
+##  Performance Optimizations
 
 - Thread-safe Lazy Loading
 - FastEmbed (ONNX Runtime)
@@ -146,7 +146,7 @@ Those books, together with the recommended book, are passed to **Google Gemini**
 
 ---
 
-# 🏗 Architecture
+#  Architecture
 
 StoryNest follows an API Gateway architecture where the frontend never communicates directly with the Machine Learning service.
 
@@ -171,7 +171,7 @@ D --> H[Google Gemini]
 
 ---
 
-# 🚀 Tech Stack
+#  Tech Stack
 
 ### Frontend
 
@@ -197,7 +197,7 @@ D --> H[Google Gemini]
 
 ---
 
-# 🚀 Local Setup
+#  Local Setup
 
 ## ML Service
 
@@ -253,7 +253,7 @@ http://localhost:5173
 
 ---
 
-# 💡 User Journey
+#  User Journey
 
 1. Register an account.
 2. Complete onboarding by selecting books you enjoy.
