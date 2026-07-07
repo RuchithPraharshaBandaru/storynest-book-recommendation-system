@@ -76,11 +76,6 @@ def load_artifacts():
     except Exception as e:
         print(f"[ERROR] Failed to load artifacts: {e}")
 
-# All known book_ids (for iteration)
-all_book_ids = books_meta["book_id"].tolist()
-
-print(f"[OK] Loaded {len(books_meta)} books, {book_embeddings.shape} embeddings, "
-      f"{len(book_to_top_users)} top-user mappings")
 
 # ---------------------------------------------------------------------------
 # FastAPI app
