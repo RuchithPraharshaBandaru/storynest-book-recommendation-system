@@ -66,7 +66,29 @@ React Dashboard
 
 ---
 
-## 4. Core Features Deep Dive
+## 4. The Three Types of Search & The Machine Learning Backbone
+
+### The Three Types of Search
+Your dashboard allows users to find books in three entirely different ways. Each one solves a unique problem.
+
+- **Keyword Search (The Traditional Way):** This is how 90% of the internet works. You type "Harry Potter", and the database uses regular expressions to find rows where `title == "Harry Potter"`. It's perfect when you know exactly what you are looking for, but fails if you search for concepts like "wizards at a magic school".
+- **Semantic Search (The Mathematical Way):** This looks at *meaning*. If you search for "wizards at a magic school", the ML model converts that phrase into a mathematical coordinate (a vector). It then searches the database for books that exist at the *same mathematical coordinate*, successfully returning *Harry Potter* even if the words aren't in the title.
+- **AI Search (The Conversational Way):** Instead of searching a database, we send the user's natural language request to **Google Gemini**. Gemini acts as an intelligent librarian, extracts the core themes, and we run those themes through the Semantic Search pipeline to return contextual matches.
+
+### The Machine Learning Backbone
+
+To understand how Semantic and AI Search work, you have to understand the three core technologies running under the hood.
+
+1. **Transformers (`all-MiniLM-L6-v2`)**
+   Transformers are the architecture behind ChatGPT and Gemini. In this project, we use `all-MiniLM-L6-v2`. It understands human language context, knowing that "Dog" is closely related to "Puppy", but far away from "Carburetor". It acts as the translation engine between human English and computer Math.
+2. **Vector Embeddings (The 384 Dimensions)**
+   When your Transformer reads a book's summary, it outputs a **Vector Embedding**. Think of it as GPS coordinates, but instead of 2 dimensions, it uses **384 dimensions**. By scoring a book across 384 different conceptual "dimensions", the model plots the book in a massive mathematical universe. Books with similar plots end up physically grouped together.
+3. **FAISS (Facebook AI Similarity Search)**
+   Calculating the distance between 1 coordinate and 10,000 other coordinates across 384 dimensions sequentially takes massive computing power. FAISS organizes the coordinates into clusters. Instead of checking all 10,000 books, it instantly zeroes in on the correct cluster and finds the nearest neighbors in `O(log n)` time (milliseconds).
+
+---
+
+## 5. Core Features Deep Dive
 
 ### Feature 1: The Hybrid Recommendation Engine (`/recommend`)
 - **How it works:** It combines Collaborative Filtering (CF) and Content-Based Filtering (CBF).
@@ -99,7 +121,7 @@ React Dashboard
 
 ---
 
-## 5. Artifacts and Models
+## 6. Artifacts and Models
 
 The ML service relies on pre-trained serialized artifacts located in the `artifacts/` folder. This structure allows us to move from a heavy Training Notebook directly into a lightweight Backend.
 
@@ -111,7 +133,7 @@ The ML service relies on pre-trained serialized artifacts located in the `artifa
 
 ---
 
-## 6. Frontend Architecture (File by File Documentation)
+## 7. Frontend Architecture (File by File Documentation)
 
 ### `client/src/App.jsx`
 - **Purpose:** The root React router.
@@ -142,7 +164,7 @@ The ML service relies on pre-trained serialized artifacts located in the `artifa
 
 ---
 
-## 7. API Gateway Architecture (Node.js)
+## 8. API Gateway Architecture (Node.js)
 
 ### `server/server.js`
 - **Purpose:** The middleman. The frontend talks to this, and this talks to MongoDB and the Python ML service.
@@ -154,7 +176,7 @@ The ML service relies on pre-trained serialized artifacts located in the `artifa
 
 ---
 
-## 8. ML Service Architecture (Python/FastAPI)
+## 9. ML Service Architecture (Python/FastAPI)
 
 ### `ml-service/main.py`
 - **Purpose:** The mathematical brain of the operation.
