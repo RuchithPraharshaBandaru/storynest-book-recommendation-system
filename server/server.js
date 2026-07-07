@@ -285,12 +285,24 @@ app.get("/books/:id", async (req, res) => {
  * but it instantly rejects POST requests with 502 Bad Gateway if the service is asleep.
  */
 async function wakeUpPython() {
-  try {
-    console.log(`[ML-WAKEUP] Sending GET /ping to wake up Python...`);
-    await axios.get(`${FASTAPI_URL}/ping`, { timeout: 30000 });
-  } catch (err) {
-    console.log(`[ML-WAKEUP] Ping failed, but container might still be booting:`, err.message);
+  console.log(`[ML-WAKEUP] Sending GET /ping to wake up Python...`);
+  let attempts = 0;
+  const maxAttempts = 20; // 20 * 5s = 100 seconds max wait
+  
+  while (attempts < maxAttempts) {
+    try {
+      // 10 second timeout per ping attempt
+      await axios.get(`${FASTAPI_URL}/ping`, { timeout: 10000 });
+      console.log(`[ML-WAKEUP] Python is awake and responded to ping!`);
+      return;
+    } catch (err) {
+      attempts++;
+      console.log(`[ML-WAKEUP] Ping attempt ${attempts} failed: ${err.message}. Retrying in 5s...`);
+      // Wait 5 seconds before retrying
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    }
   }
+  console.log(`[ML-WAKEUP] Gave up trying to wake up Python after 100 seconds.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -328,6 +340,8 @@ app.post("/user/like", authMiddleware, async (req, res) => {
 
     // Re-calculate proxy_svd_id
     try {
+      await wakeUpPython();
+      console.log(`[ML-CALL] Calling POST ${FASTAPI_URL}/proxy-match for liked book`);
       const mlRes = await axios.post(`${FASTAPI_URL}/proxy-match`, {
         book_ids: user.read_history,
       });
