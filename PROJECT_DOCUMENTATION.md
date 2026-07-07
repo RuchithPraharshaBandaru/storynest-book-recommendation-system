@@ -28,7 +28,8 @@ StoryNest is an AI-powered, hybrid recommendation engine built with React (Front
 - **How it works:** It combines Collaborative Filtering (CF) and Content-Based Filtering (CBF).
 - **CF (SVD):** Uses the `scikit-surprise` SVD model to predict how much the user would rate all 10,000 books based on their `liked_books`.
 - **CBF (FAISS + Embeddings):** Calculates the average embedding of all the user's `liked_books` using the precomputed `book_embeddings.npy`. It then calculates the dot product (cosine similarity) between this average user profile and all 10,000 books.
-- **The Score:** `Final Score = (SVD_Predicted_Rating / 5.0) * 0.5 + (Cosine_Similarity) * 0.5`. The books are sorted by this hybrid score.
+- **The Score:** The final hybrid score is actually a heavily engineered 5-signal weighted combination:
+  `Final Score = (0.30 * Content_Similarity) + (0.25 * SVD_Score) + (0.15 * Favourites_Boost) + (0.15 * Ratings_Boost) + (0.05 * Feedback_Boost)`. The books are sorted by this hybrid score.
 
 ### Feature 2: Semantic Search (`/semantic-search`)
 - **How it works:** When a user searches for "books about space battles", the text is sent to the ML service.
