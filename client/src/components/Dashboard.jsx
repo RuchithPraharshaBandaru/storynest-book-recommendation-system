@@ -247,23 +247,8 @@ export default function Dashboard({ user, onLogout }) {
   return (
     <div style={{ minHeight: "100vh" }}>
       {/* Navigation Bar */}
-      <nav
-        className="glass-card"
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 50,
-          padding: "14px 28px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          borderRadius: 0,
-          borderTop: "none",
-          borderLeft: "none",
-          borderRight: "none",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <nav className="glass-card navbar-responsive">
+        <div className="nav-left">
           
           <span style={{
             fontWeight: 700,
@@ -278,7 +263,7 @@ export default function Dashboard({ user, onLogout }) {
         </div>
 
         {/* Center: Tabs & Search */}
-        <div style={{ display: "flex", alignItems: "center", gap: 24, flex: 1, justifyContent: "center", maxWidth: 800 }}>
+        <div className="nav-center">
           {/* Tab Switcher in Navbar */}
           <div style={{ display: "flex", gap: 4, background: "rgba(0,0,0,0.04)", padding: 4, borderRadius: 12 }}>
             <button
@@ -316,7 +301,7 @@ export default function Dashboard({ user, onLogout }) {
           </div>
 
           {/* Search in Navbar */}
-          <div style={{ position: "relative", flex: 1, maxWidth: 500 }}>
+          <div className="nav-search-container">
             <div style={{ display: "flex", gap: 0, marginBottom: 0 }}>
               {/* Search mode toggle dropdown */}
               <select
@@ -440,7 +425,7 @@ export default function Dashboard({ user, onLogout }) {
         </div>
 
         {/* Right: User controls */}
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+        <div className="nav-right">
           <button
             onClick={() => setShowLikedModal(true)}
             style={{
