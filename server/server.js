@@ -456,13 +456,15 @@ app.delete("/user/like/:book_id", authMiddleware, async (req, res) => {
     const { book_id } = req.params;
     if (!book_id) return res.status(400).json({ error: "book_id required" });
 
+    const num_book_id = parseInt(book_id, 10);
+
     const user = await User.findById(req.userId);
     if (!user) return res.status(404).json({ error: "User not found" });
 
     // Remove from read_history
-    user.read_history = user.read_history.filter(id => id !== book_id);
+    user.read_history = user.read_history.filter(id => id !== num_book_id);
     // Remove from interactions
-    user.interactions = user.interactions.filter(i => i.book_id !== book_id);
+    user.interactions = user.interactions.filter(i => i.book_id !== num_book_id);
 
     // Re-calculate proxy_svd_id if still has books
     if (user.read_history.length > 0) {
@@ -482,7 +484,7 @@ app.delete("/user/like/:book_id", authMiddleware, async (req, res) => {
     await user.save();
 
     // Also remove any feedback (helpful/not_interested)
-    await Feedback.findOneAndDelete({ user_id: req.userId, book_id });
+    await Feedback.findOneAndDelete({ user_id: req.userId, book_id: num_book_id });
 
     res.json({ message: "Book un-liked", read_history: user.read_history });
   } catch (err) {
