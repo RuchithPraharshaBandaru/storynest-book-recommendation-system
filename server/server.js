@@ -465,6 +465,9 @@ app.delete("/user/like/:book_id", authMiddleware, async (req, res) => {
     user.read_history = user.read_history.filter(id => id !== num_book_id);
     // Remove from interactions
     user.interactions = user.interactions.filter(i => i.book_id !== num_book_id);
+    
+    user.markModified("read_history");
+    user.markModified("interactions");
 
     // Re-calculate proxy_svd_id if still has books
     if (user.read_history.length > 0) {
