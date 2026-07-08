@@ -163,10 +163,8 @@ export default function Onboarding({ onComplete }) {
       {/* Book Grid */}
       {loading ? (
         <div
+          className="book-grid"
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
-            gap: 20,
             maxWidth: 1100,
             margin: "0 auto",
           }}
@@ -177,10 +175,8 @@ export default function Onboarding({ onComplete }) {
         </div>
       ) : (
         <div
+          className="book-grid"
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
-            gap: 20,
             maxWidth: 1100,
             margin: "0 auto",
           }}

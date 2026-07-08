@@ -284,6 +284,21 @@ body::before {
   pointer-events: none;
 }
 
+/* ── Book Grid ── */
+.book-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 24px;
+}
+
+/* -- Responsive Mobile Styles -- */
+@media (max-width: 768px) {
+  .book-grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 16px;
+  }
+}
+
 /* -- Responsive Mobile Styles -- */
 @media (max-width: 768px) {
   /* Make header stack vertically */
