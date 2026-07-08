@@ -37,6 +37,7 @@ export default function Dashboard({ user, onLogout }) {
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [searchMode, setSearchMode] = useState("title"); // "title" | "semantic" | "ai"
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
 
   // Recommendation pool for instant refresh (Feature 9)
   const [recPool, setRecPool] = useState(() => {
@@ -136,14 +137,17 @@ export default function Dashboard({ user, onLogout }) {
 
   async function handleLikeBook(bookId) {
     try {
-      await api.post("/user/like", { book_id: bookId });
-      setSearchQuery("");
-      setSearchResults([]);
+      const isLiked = likedBooks.some(b => b.book_id === bookId);
+      if (isLiked) {
+        await api.delete(`/user/like/${bookId}`);
+      } else {
+        await api.post("/user/like", { book_id: bookId });
+      }
       fetchLikedBooks();
       setLoading(true);
       fetchRecommendations();
     } catch (err) {
-      alert(err.response?.data?.error || "Error liking book");
+      alert(err.response?.data?.error || "Error updating book list");
     }
   }
 
@@ -351,8 +355,14 @@ export default function Dashboard({ user, onLogout }) {
                   outline: "none",
                   transition: "all 0.3s",
                 }}
-                onFocus={(e) => e.target.style.borderColor = "var(--accent-primary)"}
-                onBlur={(e) => e.target.style.borderColor = "var(--border-glass)"}
+                onFocus={(e) => {
+                  e.target.style.borderColor = "var(--accent-primary)";
+                  setIsSearchFocused(true);
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = "var(--border-glass)";
+                  setTimeout(() => setIsSearchFocused(false), 200);
+                }}
               />
             </div>
             {searching && (
@@ -362,7 +372,7 @@ export default function Dashboard({ user, onLogout }) {
             )}
 
             {/* Search Results Dropdown */}
-            {searchResults.length > 0 && (
+            {(searchResults.length > 0 && isSearchFocused) && (
               <div style={{
                 position: "absolute",
                 top: "100%",
@@ -397,9 +407,17 @@ export default function Dashboard({ user, onLogout }) {
                       <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>{book.authors}</div>
                     </div>
                     {likedBooks.some(b => b.book_id === book.book_id) ? (
-                      <span style={{ fontSize: "0.75rem", color: "var(--success)", padding: "6px 12px", fontWeight: 600 }}>
+                      <button
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          handleLikeBook(book.book_id);
+                        }}
+                        style={{ fontSize: "0.75rem", color: "var(--success)", padding: "6px 12px", fontWeight: 600, background: "rgba(34, 197, 94, 0.1)", border: "1px solid rgba(34, 197, 94, 0.2)", borderRadius: 8, cursor: "pointer", flexShrink: 0 }}
+                      >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ display: "inline-block", marginRight: 4, verticalAlign: "text-bottom" }}><polyline points="20 6 9 17 4 12"></polyline></svg>In Your List
-                      </span>
+                      </button>
                     ) : (
                       <button
                         onMouseDown={(e) => e.stopPropagation()}
@@ -407,8 +425,6 @@ export default function Dashboard({ user, onLogout }) {
                           e.stopPropagation();
                           e.preventDefault();
                           handleLikeBook(book.book_id);
-                          setSearchQuery("");
-                          setSearchResults([]);
                         }}
                         className="btn-primary"
                         style={{ padding: "6px 12px", fontSize: "0.75rem", borderRadius: 8, flexShrink: 0 }}

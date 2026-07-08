@@ -450,6 +450,47 @@ app.post("/user/like", authMiddleware, async (req, res) => {
   }
 });
 
+// DELETE /user/like/:book_id
+app.delete("/user/like/:book_id", authMiddleware, async (req, res) => {
+  try {
+    const { book_id } = req.params;
+    if (!book_id) return res.status(400).json({ error: "book_id required" });
+
+    const user = await User.findById(req.userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    // Remove from read_history
+    user.read_history = user.read_history.filter(id => id !== book_id);
+    // Remove from interactions
+    user.interactions = user.interactions.filter(i => i.book_id !== book_id);
+
+    // Re-calculate proxy_svd_id if still has books
+    if (user.read_history.length > 0) {
+      try {
+        await wakeUpPython();
+        const mlRes = await axios.post(`${FASTAPI_URL}/proxy-match`, {
+          book_ids: user.read_history,
+        });
+        user.proxy_svd_id = mlRes.data.proxy_svd_id;
+      } catch (mlErr) {
+        console.error("FastAPI /proxy-match error:", mlErr.message);
+      }
+    } else {
+      user.proxy_svd_id = 0; // fallback if empty
+    }
+
+    await user.save();
+
+    // Also remove any feedback (helpful/not_interested)
+    await Feedback.findOneAndDelete({ user_id: req.userId, book_id });
+
+    res.json({ message: "Book un-liked", read_history: user.read_history });
+  } catch (err) {
+    console.error("Unlike error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // POST /user/onboard — save 3 selected books + get proxy SVD ID
 app.post("/user/onboard", authMiddleware, async (req, res) => {
   try {

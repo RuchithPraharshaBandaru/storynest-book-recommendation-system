@@ -73,15 +73,19 @@ export default function BookDetails() {
   async function handleLike() {
     setLikeLoading(true);
     try {
-      await api.post("/user/like", { book_id: parseInt(id) });
-      setIsLiked(true);
-      setReadingStatus("finished");
-    } catch (err) {
-      if (err.response?.data?.error === "Book already liked") {
-        setIsLiked(true);
+      if (isLiked) {
+        await api.delete(`/user/like/${id}`);
+        setIsLiked(false);
+        setRating(0);
+        setFavourite(false);
+        setReadingStatus("want_to_read");
       } else {
-        alert("Failed to like book");
+        await api.post("/user/like", { book_id: parseInt(id) });
+        setIsLiked(true);
+        setReadingStatus("finished");
       }
+    } catch (err) {
+      alert("Failed to update list");
     } finally {
       setLikeLoading(false);
     }
@@ -212,7 +216,7 @@ export default function BookDetails() {
             {/* Like / Add Button */}
             <button
               onClick={handleLike}
-              disabled={isLiked || likeLoading}
+              disabled={likeLoading}
               style={{
                 background: isLiked ? "rgba(236, 72, 153, 0.1)" : "var(--accent-gradient)",
                 border: isLiked ? "1px solid rgba(236, 72, 153, 0.3)" : "none",
