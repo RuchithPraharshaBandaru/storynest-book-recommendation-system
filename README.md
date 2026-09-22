@@ -1,6 +1,6 @@
 <div align="center">
 
-# 📚 StoryNest
+#  StoryNest
 
 ### AI-Powered Hybrid Book Recommendation Platform
 
@@ -19,7 +19,7 @@ A full-stack recommendation system that combines <b>Collaborative Filtering</b>,
 
 ---
 
-# 📖 About
+#  About
 
 StoryNest is a modern full-stack AI-powered book recommendation platform built using a microservice architecture.
 
